@@ -1,27 +1,37 @@
-using LinearAlgebra, SparseArrays, ITensors
+using LinearAlgebra, SparseArrays, ITensors, KrylovKit, Plots
 
-c6 = [
-    10 5;
-    5 10
-] # matrix c6{ij} for rydberg interaction coefficient between qudits i,j;
-  # diagonals are therefore the intra-, off-diagonals the inter-rydberg coefficients
-rydberg_states = size(c6)[1] # no. of rydberg states used
-node_locations = [0 0 ; 1 0] # location of the qudits (representing nodes of the graph)
-detunings = [-2 -4] # one detuning for each rydberg state
-rabis = [2 4] # one rabi frequency for between |g> and |r_i> for each rydberg state
-initial_state = [x > 1 ? 0 : x for x in 1:((rydberg_states+1)^size(node_locations)[1])] # ground state, all qudits |0>
+# parameter initialisation
+begin
+    c6 = [
+        5_420_503_000/(2pi)
+    ] #= matrix c6{ij} for rydberg interaction coefficient between qudits i,j;
+         diagonals are therefore the intra-, off-diagonals the inter-rydberg coefficients;
+         units are GHz μm^6 =#
 
-id = 1 * Matrix{Float64}(I, rydberg_states+1, rydberg_states+1) # single-qudit identity matrix, dimension |g> + all |r_i>
+    rydberg_states = size(c6)[1] # no. of rydberg states used
+    node_locations = [0 0 ; 1.75 0 ; 2*1.75 0 ; 3*1.75 0 ; 4*1.75 0] # location of the qudits (representing nodes of the graph) in units of μm
 
-function hamiltonian(detunings, rabis, c6, node_locations)
+    evolve_time = 5e-6 # total evolution time in units of s
+    n_steps = 300 # no. of timesteps
+    Δ_max = [5].*((2pi)*1e6) # one detuning range for each rydberg state in units of GHz
+    Δ = [LinRange(-1*(i^(1/3)),i^(1/3), n_steps).^3 for i in Δ_max] # Cubic sweep of over each detuning
+    Ω_max = [1].*((2pi)*1e6) # one rabi frequency for between |g> and |r_i> for each rydberg state in units of GHz
+    Ω = [i*ones(Int, n_steps) for i in Ω_max] # rabi frequency remains constant over sweep
+    
+    initial_state = [x > 1 ? 0 : x for x in 1:((rydberg_states+1)^size(node_locations)[1])] # ground state, all qudits |0>
+
+end
+
+function hamiltonian(Δ, Ω, c6, node_locations, t)
     """Generate total Hamiltonian of system using above parameters; sum of drive + interaction Hamiltonians"""
+    id = 1 * Matrix{Float64}(I, rydberg_states+1, rydberg_states+1) # single-qudit identity matrix, dimension |g> + all |r_i>
     single = zeros(rydberg_states+1, rydberg_states+1)
 
     # populate single qubit hamiltonian
     for i in 1:rydberg_states
-        single[i+1, i+1] = detunings[i]
-        single[1, i+1] = rabis[i]
-        single[i+1, 1] = rabis[i]
+        single[i+1, i+1] = -Δ[i][t] 
+        single[1, i+1] = 0.5*Ω[i][t]
+        single[i+1, 1] = 0.5*Ω[i][t]
     end
 
     # generate placeholder matrix of total dimension of end product hamiltonian
@@ -59,9 +69,9 @@ function hamiltonian(detunings, rabis, c6, node_locations)
                     left_product = id
                     int_i = zeros(rydberg_states+1, rydberg_states+1)
                     int_j = zeros(rydberg_states+1, rydberg_states+1)
-                    distance = 1
-                    int_i[p+1, p+1] = c6[p, q]/distance
-                    int_j[q+1, q+1] = c6[p, q]/distance
+                    distance = sqrt((node_locations[i,1] - node_locations[j,1])^2 + ((node_locations[i,2] - node_locations[j,2])^2))
+                    int_i[p+1, p+1] = sqrt(c6[p, q]/(distance^6))
+                    int_j[q+1, q+1] = sqrt(c6[p, q]/(distance^6))
                     i == 1 ? h_int_temp = int_i : h_int_temp = id
                     for m in 2:n_qudits
                         m == i ? left_product = int_i : m == j ? left_product = int_j : left_product = id
@@ -75,4 +85,47 @@ function hamiltonian(detunings, rabis, c6, node_locations)
     return  drive + h_int_total
 end
 
-hamiltonian(detunings, rabis, c6, node_locations)
+function total_hamiltonian()
+    total_hamiltonian = zeros((rydberg_states+1)^size(node_locations)[1], (rydberg_states+1)^size(node_locations)[1], n_steps)
+    for t in 1:n_steps
+        total_hamiltonian[:,:,t] .= hamiltonian(Δ, Ω, c6, node_locations, t)[:,:]
+    end
+    return total_hamiltonian
+end
+
+function trotter_evolve(h_tot, initial_state)
+    states = zeros(ComplexF64,(rydberg_states+1)^size(node_locations)[1], n_steps+1)
+    states[:,1] = initial_state
+    dt = evolve_time/n_steps
+    for t in 1:n_steps
+        h = h_tot[:,:,t] |> sparse
+        psi = states[:,t] |> sparse
+        states[:,t+1] = exponentiate(h, -im*dt, psi)[1]
+    end
+    return states
+end
+
+let
+    states = trotter_evolve(total_hamiltonian(), initial_state)
+    p = [real(dot(states[:,i], initial_state)*(dot(states[:,i], initial_state)')) for i in 1:size(states)[2]]
+    plot([(i-1)*(evolve_time/n_steps) for i in 1:(n_steps+1)], p[:])
+end
+
+let
+    states = trotter_evolve(total_hamiltonian(), initial_state)
+    z2_state = [0, 1]
+    for i in 1:(size(node_locations)[1]-1)
+        i%2 == 1 ? left_product = [1, 0] : left_product = [0, 1]
+        z2_state = kron(left_product, z2_state)
+    end
+    p = [real(dot(states[:,i], z2_state)*(dot(states[:,i], z2_state)')) for i in 1:size(states)[2]]
+    plot([(i-1)*(evolve_time/n_steps) for i in 1:(n_steps+1)], p[:])
+
+    state_space = zeros(size(initial_state)[1], size(initial_state)[1])
+    for i in 1:size(initial_state)[1]
+        state_space[i,i] = 1
+    end
+    p2 = [real(dot(states[:,301], state_space[i,:])*(dot(states[:,301], state_space[i,:])')) for i in 1:size(state_space)[1]]
+    bar([i for i in 1:size(state_space)[1]], p2[:])
+
+end
