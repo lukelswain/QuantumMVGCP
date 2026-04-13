@@ -2,6 +2,7 @@
 begin
     using LinearAlgebra, SparseArrays, ITensors, KrylovKit, ArnoldiMethod, LaTeXStrings, Expokit, FFTW, DSP, GraphRecipes, Graphs, GLMakie, Makie, GeometryTypes
     using Plots
+    using NaNStatistics
     import Plots.plot
     import Plots.plot!
     import Plots.xlabel!
@@ -11,7 +12,11 @@ begin
     import Plots.xticks!
     import Plots.yticks!
     import Plots.heatmap
+    import Plots.contour!
 end
+a = 2.0
+Plots.scalefontsizes(a)
+Plots.scalefontsizes(1/a)
 
 function hamiltonian(Δ, Ω, c6, node_locations, t; ϕ_s=0)
     """Generate total Hamiltonian of system using above parameters; sum of drive + interaction Hamiltonians"""
@@ -330,7 +335,7 @@ begin
 
     rydberg_states = size(c6)[1] # no. of rydberg states used
 
-    evolve_time = (8e-6)*(21//20) # total evolution time in units of s, factor same as for n_steps below
+    evolve_time = (10e-6)*(21//20)*(20//21) # total evolution time in units of s, factor same as for n_steps below
     n_steps = Int(400*(21//20)) # no. of timesteps x*y where x is no of timesteps for cubic sweep, y is factor for end bits
 
     Δ_max = [8 19 ; 8 19 ; 8 19].*(2pi*1e6) # one detuning range for each rydberg state in units of GHz
@@ -372,11 +377,16 @@ begin
     ts = [(i-1)*(evolve_time/n_steps) for i in 1:(n_steps+1)]
     parameter_plot = plot(ts[1:n_steps]*1e6, Δ[:,1,2]./Δ_max[2,1], label=L"\Delta(t)", linewidth=2)
     parameter_plot = plot!(ts[1:n_steps]*1e6, (Ω[:,1,2]./Ω_max[2,1]), label=L"\Omega(t)", linewidth=2)
-    xlabel!(L"t / \mu \mathrm{s}")
+    xlabel!(L"t / T")
     ylabel!(L"\mathrm{Parameter/Max}")
     xlims!(0, evolve_time*1e6)
     ylims!(-1.1, 1.1)
-    xticks!([0, evolve_time*1e6*(1//40), evolve_time*1e6*0.25, evolve_time*1e6*0.5, evolve_time*1e6*0.75, (evolve_time*1e6-evolve_time*1e6*(1//40)), evolve_time*1e6], [L"0.0", "", L"2.1", L"4.2", L"6.3", "", L"8.4"])
+    xtickers = [0, evolve_time*1e6*(1//40), evolve_time*1e6*0.25, evolve_time*1e6*0.5, evolve_time*1e6*0.75, (evolve_time*1e6-evolve_time*1e6*(1//40)), evolve_time*1e6]
+    xtickerlabels = @.latexstring(@.round(xtickers, sigdigits=2))
+    xtickerlabels[2] = ""
+    xtickerlabels[6] = ""
+    xtickerlabels = [L"0.0", "", L"0.25", L"0.50", L"0.75", "", L"1.0"]
+    xticks!(xtickers, xtickerlabels)
     yticks!([-1, -0.5, 0, 0.5, 1], [L"-1.0", L"-0.5", L"0.0", L"0.5", L"1.0"])
     plot(parameter_plot)
 end
@@ -556,11 +566,11 @@ begin
 
     ts = [(i-1)*(evolve_time/n_steps) for i in 1:(n_steps+1)]
     parameter_plot = plot(ts[1:n_steps]*1e6, [(Δ[:,1,2])./(Δ_max[1,1]) (Ω[:,1,2]./Ω_max[1,1])], label=[L"\Delta(t)" L"\Omega(t)"], linewidth=2)
-    xlabel!(L"t / \mu \mathrm{s}")
+    xlabel!(L"t / T")
     ylabel!(L"\mathrm{Parameter/Max}")
     xlims!(0, evolve_time*1e6)
     ylims!(-1.1, 1.1)
-    xticks!([0, evolve_time*1e6*(1//40), evolve_time*1e6*0.25, evolve_time*1e6*0.5, evolve_time*1e6*0.75, (evolve_time*1e6-evolve_time*1e6*(1//40)), evolve_time*1e6], [L"0.0", "", L"2.1", L"4.2", L"6.3", "", L"8.4"])
+    xticks!([0, evolve_time*1e6*(1//40), evolve_time*1e6*0.25, evolve_time*1e6*0.5, evolve_time*1e6*0.75, (evolve_time*1e6-evolve_time*1e6*(1//40)), evolve_time*1e6], [L"0.0", "", L"0.25", L"0.5", L"0.75", "", L"1.0"])
     yticks!([-1, -0.5, 0, 0.5, 1], [L"-1.0", L"-0.5", L"0.0", L"0.5", L"1.0"])
     plot(parameter_plot)
 end
@@ -577,7 +587,7 @@ begin
     rydberg_states = size(c6)[1] # no. of rydberg states used
 
     evolve_time = (1e-6)*(21//20) # total evolution time in units of s, factor same as for n_steps below
-    n_steps = Int(4000*(21//20)) # no. of timesteps x*y where x is no of timesteps for cubic sweep, y is factor for end bits
+    n_steps = Int(800*(21//20)) # no. of timesteps x*y where x is no of timesteps for cubic sweep, y is factor for end bits
 
     Δ_max = [8 19 ; 8 19; 8 19].*(2pi*1e6)  # one detuning range for each rydberg state in units of GHz
     function Δ_sweep(Δ)
@@ -636,24 +646,152 @@ begin
     states, h_array = trotter_evolve(total_hamiltonian(n_steps), initial_state, evolve_time)
 end
 
-# fidelity vs timesweep length (LONG)
-let
-    times = LinRange(1e-7,5e-6, 200)*(21//20)
-    fidelities = zeros(length(times))
-    state_space = zeros(size(initial_state)[1], size(initial_state)[1])
-
-    for i in 1:size(initial_state)[1]
-        state_space[i,i] = 1
-    end
-
-    for i in eachindex(times)
-        states, h_array = trotter_evolve(total_hamiltonian(n_steps), initial_state, times[i])
-        final_state = states[:,(n_steps+1)]
-        p2 = [real(dot(final_state, state_space[i,:])*(dot(final_state, state_space[i,:])')) for i in 1:size(state_space)[1]]
-        fidelities[i] = p2[6] + p2[8] + p2[12] + p2[16] + p2[20] + p2[22]
-    end
-    plot(times*1e6, fidelities)
+Δ_manual = Δ
+Ω_manual = Ω
+Δ_CRAB = Δ
+Ω_CRAB = Ω
+Δ_standard = Δ
+Ω_standard = Ω
+Δ_CRAB2 = Δ
+Ω_CRAB2 = Ω
+dim = size(initial_state)[1]
+h_tot_manual = zeros(ComplexF64, dim, dim, n_steps)
+h_tot_CRAB = zeros(ComplexF64, dim, dim, n_steps)
+h_tot_standard = zeros(ComplexF64, dim, dim, n_steps)
+h_tot_CRAB2 = zeros(ComplexF64, dim, dim, n_steps)
+for t in 1:n_steps
+    h_tot_manual[:, :, t] .= hamiltonian(Δ_manual, Ω_manual, c6, node_locations, t)
+    h_tot_CRAB[:, :, t] .= hamiltonian(Δ_CRAB, Ω_CRAB, c6, node_locations, t)
+    h_tot_standard[:, :, t] .= hamiltonian(Δ_standard, Ω_standard, c6, node_locations, t)
+    h_tot_CRAB2[:, :, t] .= hamiltonian(Δ_CRAB2, Ω_CRAB2, c6, node_locations, t)
+    println(t*100/n_steps)
 end
+
+# fidelity vs timesweep length (LONG)
+begin
+    n_times = 300
+    n_iterations = 100
+    times = LinRange(1e-9,8e-6, n_times)*(21//20)
+    fidelities_total = zeros(n_times, 4, n_iterations)
+    fidelities = zeros(n_times, 4)
+    Δ_smoothing = [(c6[i,i]/(lattice_spacing^6))-(Δ_max[1,i]) for i in eachindex(Δ_max[1,:])]*1e-1
+    Δ_off = zeros(rydberg_states, size(node_locations)[1], n_iterations)
+    excited_state = [0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0]
+    
+    for q in 1:n_iterations
+        for l in 1:rydberg_states
+            for n in 1:size(Δ)[3]
+                smoothness_offset = Δ_smoothing[l]*(randn())
+                Δ_off[l, n, q] = smoothness_offset
+                Δ_standard[:, l, n] = Δ_standard[:, l, n] .+ Δ_off[l, n, q]
+                Δ_manual[:, l, n] = Δ_manual[:, l, n] .+ Δ_off[l, n, q]
+                Δ_CRAB[:, l, n] = Δ_CRAB[:, l, n] .+ Δ_off[l, n, q]
+                Δ_CRAB2[:, l, n] = Δ_CRAB2[:, l, n] .+ Δ_off[l, n, q]
+            end
+        end
+        for t in 1:n_steps
+            h_tot_manual[:, :, t] .= hamiltonian(Δ_manual, Ω_manual, c6, node_locations, t)
+            h_tot_CRAB[:, :, t] .= hamiltonian(Δ_CRAB, Ω_CRAB, c6, node_locations, t)
+            h_tot_standard[:, :, t] .= hamiltonian(Δ_standard, Ω_standard, c6, node_locations, t)
+            h_tot_CRAB2[:, :, t] .= hamiltonian(Δ_CRAB2, Ω_CRAB2, c6, node_locations, t)
+        end
+        for i in eachindex(times)
+            states, h_array = trotter_evolve(h_tot_standard, initial_state, times[i])
+            fidelities_total[i, 1, q] = sum(real(conj(states[:, n_steps+1]).*states[:, n_steps+1]).*excited_state)
+
+            states, h_array = trotter_evolve(h_tot_manual, initial_state, times[i])
+            fidelities_total[i, 2, q] = sum(real(conj(states[:, n_steps+1]).*states[:, n_steps+1]).*excited_state)
+
+            states, h_array = trotter_evolve(h_tot_CRAB, initial_state, times[i])
+            fidelities_total[i, 3, q] = sum(real(conj(states[:, n_steps+1]).*states[:, n_steps+1]).*excited_state)
+
+            states, h_array = trotter_evolve(h_tot_CRAB2, initial_state, times[i])
+            fidelities_total[i, 4, q] = sum(real(conj(states[:, n_steps+1]).*states[:, n_steps+1]).*excited_state)
+
+            println(((q-1)*100/n_iterations) + (1/n_iterations)*(i*100/n_times))
+        end
+        for l in 1:rydberg_states
+            for n in 1:size(Δ)[3]
+                Δ_standard[:, l, n] = Δ_standard[:, l, n] .- Δ_off[l, n, q]
+                Δ_manual[:, l, n] = Δ_manual[:, l, n] .- Δ_off[l, n, q]
+                Δ_CRAB[:, l, n] = Δ_CRAB[:, l, n] .- Δ_off[l, n, q]
+                Δ_CRAB2[:, l, n] = Δ_CRAB2[:, l, n] .- Δ_off[l, n, q]
+            end
+        end
+    end
+    for m in 1:n_iterations
+        fidelities[:, 1] = fidelities[:, 1] .+ fidelities_total[:, 1, m]
+        fidelities[:, 2] = fidelities[:, 2] .+ fidelities_total[:, 2, m]
+        fidelities[:, 3] = fidelities[:, 3] .+ fidelities_total[:, 3, m]
+        fidelities[:, 4] = fidelities[:, 4] .+ fidelities_total[:, 4, m]
+    end
+    fidelities = fidelities./n_iterations
+    plot(times*1e6, [fidelities[:, q] for q in 1:4], lw=3, label=[L"\mathrm{Standard}" L"\mathrm{Manual}" L"\mathrm{CRAB} 1" L"\mathrm{CRAB} 2"])
+    # ylabel!(L"\mathrm{Fidelity, }F")
+    # yticks!([0, 0.2, 0.4, 0.6, 0.8, 1], [L"0", L"0.2", L"0.4", L"0.6", L"0.8", L"1.0"])
+    # ylims!(0, 1)
+    # xlabel!(L"\mathrm{Timesweep}"*" "*L"\mathrm{Duration,}"*L"T / \mu \mathrm{s}")
+    # xticks!([0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0], @.latexstring([0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]))
+    # xticks!([0.1, 1.0, 2.0, 3.0, 4.0, 5.0], @.latexstring([0.1, 1.0, 2.0, 3.0, 4.0, 5.0]))
+    # xlims!(1,9)
+end
+
+times = LinRange(1e-9,8e-6, n_times)*(21//20)
+plot(times[:]*1e6, [fidelities[:, q] for q in 1:4], lw=3, label=[L"\mathrm{Standard}" L"\mathrm{Manual}" L"\mathrm{CRAB} 1" L"\mathrm{CRAB} 2"], legend=true)
+ylabel!(L"\mathrm{Fidelity, }F")
+yticks!([0, 0.2, 0.4, 0.6, 0.8, 1], [L"0", L"0.2", L"0.4", L"0.6", L"0.8", L"1.0"])
+# yticks!([0.995, 0.996, 0.997, 0.998, 0.999, 1], @.latexstring([0.995, 0.996, 0.997, 0.998, 0.999, 1]))
+yticks!([0.80, 0.85, 0.90, 0.95, 1], @.latexstring([0.80, 0.85, 0.90, 0.95, 1]))
+yticks!([0.985, 0.988, 0.991, 0.994, 0.997, 1.0], @.latexstring([0.985, 0.988, 0.991, 0.994, 0.997, 1.0]))
+yticks!([0.998, 0.9985, 0.999, 0.9995,1.0], @.latexstring([0.998, 0.9985, 0.999, 0.9995,1.0]))
+ylims!(0.85, 1.00001)
+# yticks!([0, 0.2, 0.4, 0.6, 0.8, 1], [L"0", L"0.2", L"0.4", L"0.6", L"0.8", L"1.0"])
+ylims!(0.998, 1)
+xlabel!(L"\mathrm{Timesweep}"*" "*L"\mathrm{Duration,}"*L"T / \mu \mathrm{s}")
+xticks!([0, 0.2, 0.4, 0.6, 0.8, 1.0], @.latexstring([0, 0.2, 0.4, 0.6, 0.8, 1.0]))
+# xticks!([0.1, 1.1, 2.0, 3.0, 4.0, 5.0], @.latexstring([0.1, 1.0, 2.0, 3.0, 4.0, 5.0]))
+xticks!([4, 5, 6, 7, 8], @.latexstring([4, 5, 6, 7, 8]))
+xticks!([0, 2, 4, 6, 8], @.latexstring([0, 2, 4, 6, 8]))
+xticks!([5, 6, 7, 8], @.latexstring([5, 6, 7, 8]))
+xticks!([1.5, 2, 2.5, 3, 3.5], @.latexstring([1.5, 2, 2.5, 3, 3.5]))
+xticks!([1, 2, 3, 4, 5], @.latexstring([1, 2, 3, 4, 5]))
+xlims!(5,8)
+
+logtimes = @.log(10, times[:]*1e6)
+loginfidelities = @.log(10, -1*(fidelities[:, :].-1))
+plot(times[1:1:300]*1e6, [loginfidelities[1:1:300, q] for q in 1:4], lw=3, label=[L"\mathrm{Standard}" L"\mathrm{Manual}" L"\mathrm{CRAB} 1" L"\mathrm{CRAB} 2"], legend=true)
+# plot(logtimes, [loginfidelities[:, q] for q in 1:4], lw=3, label=[L"\mathrm{Standard}" L"\mathrm{Manual}" L"\mathrm{CRAB} 1" L"\mathrm{CRAB} 2"], legend=true)
+
+ylogticks = zeros(Float64, 61)
+ylogticks[1] = 1.0
+for i in 1:6
+    ylogticks[i*10 + 1] = 10^(-float(i))
+    ylogticks[((i-1)*10 + 1):(i*10 + 1)] .= LinRange(10^(-float(i)+1), 10^(-float(i)), 11)
+end
+ylogtickers = [ylogticks[i] for i in 1:57]
+ytickers = @.log(10, ylogtickers)
+ytickerlabels = ["" for i in 1:51]
+ytickerlabels[((1-1)*10 + 1)] = L"10^{0}"
+ytickerlabels[((2-1)*10 + 1)] = L"10^{-1}"
+ytickerlabels[((3-1)*10 + 1)] = L"10^{-2}"
+ytickerlabels[((4-1)*10 + 1)] = L"10^{-3}"
+ytickerlabels[((5-1)*10 + 1)] = L"10^{-4}"
+ytickerlabels[((6-1)*10 + 1)] = L"10^{-5}"
+yticks!(ytickers, ytickerlabels)
+ylabel!(L"\mathrm{Infidelity, } \mathcal{I}")
+xticks!([0, 2, 4, 6, 8], @.latexstring([0, 2, 4, 6, 8]))
+xlims!(0, 8)
+ylims!(-5.4, 0)
+xlabel!(L"\mathrm{Timesweep}"*" "*L"\mathrm{Duration,}"*L"T / \mu \mathrm{s}")
+
+Δ_manual_backup = Δ_manual
+Ω_manual_backup = Ω_manual
+Δ_CRAB_backup = Δ_CRAB
+Ω_CRAB_backup = Ω_CRAB
+Δ_standard_backup = Δ_standard
+Ω_standard_backup = Ω_standard
+Δ_CRAB2_backup = Δ_CRAB2
+Ω_CRAB2_backup = Ω_CRAB2
 
 # bar plot of state space fidelities (updated graphics)
 let
@@ -722,12 +860,16 @@ begin
     end
     
     # plot(collect(1:(n_steps+1))[100:200], [(fidelities[100:200].-0.95).*20, (f.-0.99).*200, [cos(e_gap[i]*(8.4*i*1e-6/n_steps)) for i in 100:200]])
-    plot(ts*1e6, fidelities, label=L"$| \langle \Psi |$$S_{3}$ $ \rangle $$| $$^2$", linewidth=2)
+    plot(ts*1e6, fidelities, label=L"$| \langle \Psi |$$S_{3}$ $ \rangle $$| $$^2$", linewidth=3)
     xlabel!(L"t / \mu \mathrm{s}")
     ylabel!(L"\mathrm{Fidelity, }F")
     xlims!(0, evolve_time*1e6)
     ylims!(0, 1)
-    xticks!([0, evolve_time*1e6*(1//42), evolve_time*1e6*0.25, evolve_time*1e6*0.5, evolve_time*1e6*0.75, (evolve_time*1e6-evolve_time*1e6*(1//42)), evolve_time*1e6], [L"0.0", "", L"2.1", L"4.2", L"6.3", "", L"8.4"])
+    xtickers = [0, evolve_time*1e6*(119//840), evolve_time*1e6*0.25, evolve_time*1e6*0.5, evolve_time*1e6*0.75, (evolve_time*1e6-evolve_time*1e6*(1//42)), evolve_time*1e6]
+    xtickerlabels = @.latexstring(@.round(xtickers, sigdigits=2))
+    xtickerlabels[2] = ""
+    xtickerlabels[6] = ""
+    xticks!(xtickers, xtickerlabels)
     yticks!([0, 0.2, 0.4, 0.6, 0.8, 1], [L"0", L"0.2", L"0.4", L"0.6", L"0.8", L"1.0"])
 end
 
@@ -746,8 +888,8 @@ end
 # eigenspectrum plot Arnoldi (updated with smoothing offset)
 begin
     ϕ=0
-    n_eig = 9
-    n_offsets = 100
+    n_eig = 12
+    n_offsets = 10
 
     Δ_smoothing = [Δ_max[1, i] for i in eachindex(Δ_max[1,:])]*1e-4
     Δ_off = zeros(rydberg_states, size(node_locations)[1], n_offsets)
@@ -804,6 +946,7 @@ begin
                 Δ[:, l, n] = Δ[:, l, n] .- Δ_off[l, n, q]
             end
         end
+        println(q*100/n_offsets)
     end
 
     eig_fidelities = zeros(n_eig, n_steps)
@@ -819,18 +962,22 @@ begin
     inst_eigvals = inst_eigvals./n_offsets
     inst_eigvecs = inst_eigvecs./n_offsets
         
-    plot(collect(1:n_steps), [inst_eigvals[i,1:n_steps] for i in 1:n_eig])
+    plot(ts[1:n_steps]*1e6, [inst_eigvals[i,1:n_steps].*(1e-6/(2pi)) for i in 1:n_eig], size=(750,500), legend=false, lw=3)
+    ylabel!(L"\mathrm{Energy, }E / (h\mathrm{MHz})")
+    xlims!(0, evolve_time*1e6)
+    xlabel!(L"t / \mu \mathrm{s}")
+    yticks!([-40, -30, -20, -10, 0, 10, 20], @.latexstring([-40, -30, -20, -10, 0, 10, 20]))
+    xtickers = [0, evolve_time*1e6*(119//840), evolve_time*1e6*0.25, evolve_time*1e6*0.5, evolve_time*1e6*0.75, (evolve_time*1e6-evolve_time*1e6*(1//42)), evolve_time*1e6]
+    xtickerlabels = @.latexstring(@.round(xtickers, sigdigits=2))
+    xtickerlabels[2] = ""
+    xtickerlabels[6] = ""
+    xticks!(xtickers, xtickerlabels)
 end
 
-states2 = states
-states = states2
-states2==states
-plot(collect(3:n_steps-2), [inst_eigvals[i,3:n_steps-2] for i in 1:n_eig])
+path = raw"C:\Users\Plowa\Programming\Projects\Durham\Project 2526\Figures\3 vertex triangle\Optimised\Final 4 schedule timesweep duration plots"
+savefig(joinpath(path, "infidelity_0to8_average_logplot.svg"))
 
-path = raw"C:\Users\Plowa\Programming\Projects\Durham\Project 2526\Figures\3 vertex triangle\perturbed\Gaussian 3 vertex\single instances/"
-savefig(joinpath(path, "barplot_state_space.svg"))
-
-# K3 CRAB main sweep optimisation
+# K3 CRAB main sweep optimisation parameter setup
 begin
     c6 = [
         361.0 -94.1;
@@ -1055,7 +1202,7 @@ function costfn2(θ, r, output=false)
     ts = [(i-1)*(evolve_time/n_steps) for i in 1:(n_steps+1)]
 
     s_Δ = LinRange(0, 1, n_steps)
-    s_Ω = ones(n_steps)
+    s_Ω = [sin(pi*(t/n_steps)) for t in 1:n_steps]
 
     function f1(t)
         λ = sin(pi*(t/n_steps))
@@ -1067,6 +1214,7 @@ function costfn2(θ, r, output=false)
         end
         value = value*λ
         value += 1
+        return value
     end
     function f2(t)
         λ = sin(pi*(t/n_steps))
@@ -1077,7 +1225,10 @@ function costfn2(θ, r, output=false)
             value += A2[k]*sin(ω_A2[k]*t) + B2[k]*cos(ω_B2[k]*t)
         end
         value = value*λ
+        value += 1
+        return value
     end
+
     s = zeros(n_steps)
     s2 = zeros(n_steps)
     for t in 1:n_steps
@@ -1235,15 +1386,300 @@ function costfn3(θ, r, output=false)
 
     dim = size(initial_state)[1]
     h_tot = zeros(ComplexF64, dim, dim, n_steps)
-    for t in 1:n_steps
-        h_tot[:, :, t] .= hamiltonian(Δ, Ω, c6, node_locations, t)
+    n_eig = 12
+    n_offsets = 1
+
+    Δ_smoothing = [Δ_max[1, i] for i in eachindex(Δ_max[1,:])]*1e-4
+    Δ_off = zeros(rydberg_states, size(node_locations)[1], n_offsets)
+
+    states_total = zeros(ComplexF64, size(initial_state)[1], (n_steps+1), n_offsets)
+    h_array_total = zeros(ComplexF64, size(initial_state)[1], size(initial_state)[1], (n_steps), n_offsets)
+    eig_fidelities_total = zeros(n_eig, n_steps, n_offsets)
+    inst_eigvals_total = zeros(Float64, n_eig, n_steps, n_offsets)
+    inst_eigvecs_total = zeros(ComplexF64, size(initial_state)[1], n_eig, n_steps, n_offsets)
+    δ_total = zeros(n_steps, n_offsets)
+
+    for q in 1:n_offsets
+        for l in 1:rydberg_states
+            for n in 1:size(Δ)[3]
+                smoothness_offset = Δ_smoothing[l]*(randn())
+                Δ_off[l, n, q] = smoothness_offset
+                Δ[:, l, n] = Δ[:, l, n] .+ Δ_off[l, n, q]
+            end
+        end
+
+        for t in 1:n_steps
+            h_tot[:, :, t] .= hamiltonian(Δ, Ω, c6, node_locations, t)
+        end
+
+        states_total[:, :, q], h_array_total[:, :, :, q] = trotter_evolve(h_tot, initial_state, evolve_time)
+
+        for i in 1:(n_steps)
+            h_sparse = h_array_total[:,:,i,q] |> sparse
+            decomps, history = partialschur(h_sparse, nev=n_eig, which=:SR, tol=1e-10)
+            eigenvalues, eigenvectors = partialeigen(decomps)
+            inst_eigvals_total[:, i, q] = real(eigenvalues[1:n_eig])
+            for j in 1:n_eig
+                inst_eigvecs_total[:, j, i, q] = eigenvectors[:, j]
+            end
+        end
+
+        for i in 1:n_steps
+            for j in 1:n_eig
+                eig_fidelities_total[j, i, q] = real(dot(inst_eigvecs_total[:, j, i, q], states_total[:, i, q])*dot(inst_eigvecs_total[:, j, i, q], states_total[:, i, q])')
+            end
+        end
+
+        # for i in 1:n_steps
+        #     for j in 1:n_eig
+        #         eigvec_j_norm = sqrt(sum(@.real(inst_eigvecs_total[:, j, i, q].*conj(inst_eigvecs_total[:, j, i, q]))))
+        #         inst_eigvecs_total[:, j, i, q] = inst_eigvecs_total[:, j, i, q]./eigvec_j_norm
+
+        #         r0 = sqrt(inst_eigvecs_total[1, j, i, q]*conj(inst_eigvecs_total[1, j, i, q]))
+        #         phase_0 = log(inst_eigvecs_total[1, j, i, q]/r0)
+        #         inst_eigvecs_total[:, j, i, q] = inst_eigvecs_total[:, j, i, q]*exp(-1*phase_0)
+        #     end
+        # end
+
+        # dt = ts[2]-ts[1]
+        # # delta computation
+        # errorstates = [4, 5, 6, 7, 8, 9, 10]
+        # for i in 1:(n_steps-1)
+        #     for j in 4:n_eig
+        #         transition_prob = sqrt(abs(real(((inst_eigvecs_total[:, j, i, q]')*((h_array_total[:, :, i+1, q]-h_array_total[:, :, i, q])./(1*dt))*inst_eigvecs_total[:, 1, i, q])*conj(((inst_eigvecs_total[:, j, i, q]')*(h_array_total[:, :, i+1, q]-h_array_total[:, :, i, q])./(1*dt)*inst_eigvecs_total[:, 1, i, q])))[1]))
+        #         e_gap_term = 1/((inst_eigvals_total[j, i, q]-inst_eigvals_total[1, i, q])^2)
+        #         δ_total[i, q] += transition_prob*e_gap_term
+        #         # δ[i] = e_gap_term
+        #         # δ[i] = transition_prob
+        #     end
+        # end
+        # δ_total[n_steps, q] = δ_total[n_steps-1, q]
+
+        for l in 1:rydberg_states
+            for n in 1:size(Δ)[3]
+                Δ[:, l, n] = Δ[:, l, n] .- Δ_off[l, n, q]
+            end
+        end
     end
 
-    states, h_array = trotter_evolve(h_tot, initial_state, evolve_time)
+    states = zeros(size(initial_state)[1], n_steps+1)
+    h_array = zeros(size(initial_state)[1], size(initial_state)[1], n_steps)
+    eig_fidelities = zeros(n_eig, n_steps)
+    # inst_eigvals = zeros(Float64, n_eig, n_steps)
+    # inst_eigvecs = zeros(ComplexF64, size(initial_state)[1], n_eig, n_steps)
+    # δ = zeros(n_steps)
 
-    cost_value = sum([(1e-8)*real((states[:, t]')*(h_array[:, :, t]*states[:, t])) for t in 1:n_steps])/n_steps
+    for m in 1:n_offsets
+        states = states .+ states_total[:, :, m]
+        h_array = h_array .+ h_array_total[:, :, :, m]
+        eig_fidelities = eig_fidelities .+ eig_fidelities_total[:, :, m]
+        # inst_eigvals = inst_eigvals .+ inst_eigvals_total[:, :, m]
+        # inst_eigvecs = inst_eigvecs .+ inst_eigvecs_total[:, :, :, m]
+        # δ = δ .+ δ_total[:, m]
+    end
+    states = states./n_offsets
+    h_array = h_array./n_offsets
+    eig_fidelities = eig_fidelities./n_offsets
+    # inst_eigvals = inst_eigvals./n_offsets
+    # inst_eigvecs = inst_eigvecs./n_offsets
+    # δ = δ./n_offsets
+
+    cost_value = -1*sum(((eig_fidelities[1, 1:n_steps-20]).+1).^(10))/(n_steps-20)
     if output == true
-        return states, h_array, cost_value, s_tot, Δ, Ω
+        # return states, h_array, cost_value, δ[1:n_steps-20], Δ, Ω
+        return states, h_array, cost_value, Δ, Ω
+    end
+    return cost_value
+end
+
+function costfn4(θ, r, output=false)
+    c6 = [
+        361.0 -94.1;
+        -94.1 862.7
+    ] .* (2pi)*1e9 #= matrix c6{ij} for rydberg interaction coefficient between qudits i,j;
+         diagonals are therefore the intra-, off-diagonals the inter-rydberg coefficients;
+         units are GHz μm^6 =#
+    node_locations = [0 0 0 ; 0.5*lattice_spacing (sqrt(3)/2)*lattice_spacing 0 ; lattice_spacing 0 0 ] # location of the qudits (representing nodes of the graph) in units of μm
+    rydberg_states = size(c6)[1] # no. of rydberg states used
+    evolve_time = (1e-6)*(21//20) # total evolution time in units of s, factor same as for n_steps below
+    n_steps = Int(800*(21//20)) # no. of timesteps x*y where x is no of timesteps for cubic sweep, y is factor for end bits
+
+    N_c = 8
+    A1 = zeros(N_c)
+    B1 = zeros(N_c)
+    A2 = zeros(N_c)
+    B2 = zeros(N_c)
+    r1 = zeros(2*N_c)
+    r2 = zeros(2*N_c)
+    for k in 1:N_c
+        A1[k] = θ[k]
+        B1[k] = θ[k+N_c]
+        A2[k] = θ[k+(2*N_c)]
+        B2[k] = θ[k+(3*N_c)]
+    end
+    for i in 1:(2*N_c)
+        r1[i] = r[i]
+        r2[i] = r[i+(2*N_c)]
+    end
+
+    Δ_max = [8 19 ; 8 19; 8 19].*(2pi*1e6)  # one detuning range for each rydberg state in units of GHz
+    Ω_max = [3 7 ; 3 7 ; 3 7].*(2pi*1e6)  # one rabi frequency for between |g> and |r_i> for each rydberg state in units of GHz
+    Δ = zeros(n_steps, rydberg_states, size(node_locations)[1])
+    Ω = zeros(n_steps, rydberg_states, size(node_locations)[1])
+    
+    initial_state = [x > 1 ? 0 : x for x in 1:((rydberg_states+1)^size(node_locations)[1])] # ground state, all qudits |0>
+
+    ts = [(i-1)*(evolve_time/n_steps) for i in 1:(n_steps+1)]
+
+    s_Δ = LinRange(0, 1, n_steps)
+    s_Ω = [sin(pi*(t/n_steps)) for t in 1:n_steps]
+
+    function f1(t)
+        λ = sin(pi*(t/n_steps))
+        ω_A1 = [pi*k*(1+r1[k])/n_steps for k in 1:N_c]
+        ω_B1 = [pi*(k-N_c)*(1+r1[k])/n_steps for k in (N_c+1):(2*N_c)]
+        value = 0
+        for k in 1:N_c
+            value += A1[k]*sin(ω_A1[k]*t) + B1[k]*cos(ω_B1[k]*t)
+        end
+        value = value*λ
+        value += 1
+        return value
+    end
+    function f2(t)
+        λ = sin(pi*(t/n_steps))
+        ω_A2 = [pi*k*(1+r2[k])/(n_steps) for k in 1:N_c]
+        ω_B2 = [pi*(k-N_c)*(1+r2[k])/(n_steps) for k in (N_c+1):(2*N_c)]
+        value = 0
+        for k in 1:N_c
+            value += A2[k]*sin(ω_A2[k]*t) + B2[k]*cos(ω_B2[k]*t)
+        end
+        value = value*λ
+        value += 1
+        return value
+    end
+    s = zeros(n_steps)
+    s2 = zeros(n_steps)
+    for t in 1:n_steps
+        s[t] = s_Δ[t]*f1(t)
+        if f2(t) > 0
+            s2[t] = s_Ω[t]*f2(t)
+        else
+            s2[t] = 0
+        end
+    end
+
+    for j in 1:rydberg_states
+        for t in 1:n_steps
+            Δ[t, j, :] .= -1*Δ_max[1, j]*(1-s[t]) + Δ_max[1, j]*s[t]
+            Ω[t, j, :] .= Ω_max[1, j]*s2[t]
+        end
+    end
+
+    dim = size(initial_state)[1]
+    h_tot = zeros(ComplexF64, dim, dim, n_steps)
+    n_eig = 12
+    n_offsets = 1
+
+    Δ_smoothing = [Δ_max[1, i] for i in eachindex(Δ_max[1,:])]*1e-4
+    Δ_off = zeros(rydberg_states, size(node_locations)[1], n_offsets)
+
+    states_total = zeros(ComplexF64, size(initial_state)[1], (n_steps+1), n_offsets)
+    h_array_total = zeros(ComplexF64, size(initial_state)[1], size(initial_state)[1], (n_steps), n_offsets)
+    eig_fidelities_total = zeros(n_eig, n_steps, n_offsets)
+    inst_eigvals_total = zeros(Float64, n_eig, n_steps, n_offsets)
+    inst_eigvecs_total = zeros(ComplexF64, size(initial_state)[1], n_eig, n_steps, n_offsets)
+    δ_total = zeros(n_steps, n_offsets)
+
+    for q in 1:n_offsets
+        for l in 1:rydberg_states
+            for n in 1:size(Δ)[3]
+                smoothness_offset = Δ_smoothing[l]*(randn())
+                Δ_off[l, n, q] = smoothness_offset
+                Δ[:, l, n] = Δ[:, l, n] .+ Δ_off[l, n, q]
+            end
+        end
+
+        for t in 1:n_steps
+            h_tot[:, :, t] .= hamiltonian(Δ, Ω, c6, node_locations, t)
+        end
+
+        states_total[:, :, q], h_array_total[:, :, :, q] = trotter_evolve(h_tot, initial_state, evolve_time)
+
+        for i in 1:(n_steps)
+            h_sparse = h_array_total[:,:,i,q] |> sparse
+            decomps, history = partialschur(h_sparse, nev=n_eig, which=:SR, tol=1e-10)
+            eigenvalues, eigenvectors = partialeigen(decomps)
+            inst_eigvals_total[:, i, q] = real(eigenvalues[1:n_eig])
+            for j in 1:n_eig
+                inst_eigvecs_total[:, j, i, q] = eigenvectors[:, j]
+            end
+        end
+
+        for i in 1:n_steps
+            for j in 1:n_eig
+                eig_fidelities_total[j, i, q] = real(dot(inst_eigvecs_total[:, j, i, q], states_total[:, i, q])*dot(inst_eigvecs_total[:, j, i, q], states_total[:, i, q])')
+            end
+        end
+
+        # for i in 1:n_steps
+        #     for j in 1:n_eig
+        #         eigvec_j_norm = sqrt(sum(@.real(inst_eigvecs_total[:, j, i, q].*conj(inst_eigvecs_total[:, j, i, q]))))
+        #         inst_eigvecs_total[:, j, i, q] = inst_eigvecs_total[:, j, i, q]./eigvec_j_norm
+
+        #         r0 = sqrt(inst_eigvecs_total[1, j, i, q]*conj(inst_eigvecs_total[1, j, i, q]))
+        #         phase_0 = log(inst_eigvecs_total[1, j, i, q]/r0)
+        #         inst_eigvecs_total[:, j, i, q] = inst_eigvecs_total[:, j, i, q]*exp(-1*phase_0)
+        #     end
+        # end
+
+        # dt = ts[2]-ts[1]
+        # # delta computation
+        # errorstates = [4, 5, 6, 7, 8, 9, 10]
+        # for i in 1:(n_steps-1)
+        #     for j in 4:n_eig
+        #         transition_prob = sqrt(abs(real(((inst_eigvecs_total[:, j, i, q]')*((h_array_total[:, :, i+1, q]-h_array_total[:, :, i, q])./(1*dt))*inst_eigvecs_total[:, 1, i, q])*conj(((inst_eigvecs_total[:, j, i, q]')*(h_array_total[:, :, i+1, q]-h_array_total[:, :, i, q])./(1*dt)*inst_eigvecs_total[:, 1, i, q])))[1]))
+        #         e_gap_term = 1/((inst_eigvals_total[j, i, q]-inst_eigvals_total[1, i, q])^2)
+        #         δ_total[i, q] += transition_prob*e_gap_term
+        #         # δ[i] = e_gap_term
+        #         # δ[i] = transition_prob
+        #     end
+        # end
+        # δ_total[n_steps, q] = δ_total[n_steps-1, q]
+
+        for l in 1:rydberg_states
+            for n in 1:size(Δ)[3]
+                Δ[:, l, n] = Δ[:, l, n] .- Δ_off[l, n, q]
+            end
+        end
+    end
+
+    states = zeros(size(initial_state)[1], n_steps+1)
+    h_array = zeros(size(initial_state)[1], size(initial_state)[1], n_steps)
+    eig_fidelities = zeros(n_eig, n_steps)
+    # inst_eigvals = zeros(Float64, n_eig, n_steps)
+    # inst_eigvecs = zeros(ComplexF64, size(initial_state)[1], n_eig, n_steps)
+    # δ = zeros(n_steps)
+
+    for m in 1:n_offsets
+        states = states .+ states_total[:, :, m]
+        h_array = h_array .+ h_array_total[:, :, :, m]
+        eig_fidelities = eig_fidelities .+ eig_fidelities_total[:, :, m]
+        # inst_eigvals = inst_eigvals .+ inst_eigvals_total[:, :, m]
+        # inst_eigvecs = inst_eigvecs .+ inst_eigvecs_total[:, :, :, m]
+        # δ = δ .+ δ_total[:, m]
+    end
+    states = states./n_offsets
+    h_array = h_array./n_offsets
+    eig_fidelities = eig_fidelities./n_offsets
+    # inst_eigvals = inst_eigvals./n_offsets
+    # inst_eigvecs = inst_eigvecs./n_offsets
+    # δ = δ./n_offsets
+
+    cost_value = -1*sum((eig_fidelities[1, 1:n_steps-20]).^5)/(n_steps-20)
+    if output == true
+        # return states, h_array, cost_value, δ[1:n_steps-20], Δ, Ω
+        return states, h_array, cost_value, Δ, Ω
     end
     return cost_value
 end
@@ -1296,7 +1732,9 @@ function gradient3(θ, r, method=false)
     gradvector = zeros(n_params)
     dθ = zeros(n_params)
     h = 0.0001
-    states, h_array, current_value, s_tot, Δ_used, Ω_used = costfn3(θ, r, true)
+    # states, h_array, current_value, s_tot, Δ_used, Ω_used = costfn3(θ, r, true)
+    states, h_array, current_value, Δ_used, Ω_used = costfn3(θ, r, true)
+
 
     for i in 1:(n_params-1)
         dθ[i] = h
@@ -1308,15 +1746,35 @@ function gradient3(θ, r, method=false)
     dθ[n_params] = 0
 
     if method == true
-        return gradvector, states, h_array, current_value, s_tot, Δ_used, Ω_used
+        # return gradvector, states, h_array, current_value, s_tot, Δ_used, Ω_used
+        return gradvector, states, h_array, current_value, Δ_used, Ω_used
+    end
+    return gradvector
+end
+
+function gradient4(θ, r, method=false)
+    n_params = length(θ)
+    gradvector = zeros(n_params)
+    dθ = zeros(n_params)
+    h = 0.0001
+    states, h_array, current_value, Δ_used, Ω_used = costfn4(θ, r, true)
+
+    for i in 1:(n_params)
+        dθ[i] = h
+        gradvector[i] = (costfn4(θ+dθ, r) - current_value)/h
+        dθ[i] = 0
+    end
+
+    if method == true
+        return gradvector, states, h_array, current_value, Δ_used, Ω_used
     end
     return gradvector
 end
 
 N_c = 8
-n_epochs = 500
+n_epochs = 5000
 θ = zeros(((4*N_c)+1), n_epochs)
-θ[((4*N_c)+1), 1] = 500
+θ[((4*N_c)+1), 1] = 124
 r = zeros((4*N_c), n_epochs)
 r[:, 1] = rand(4*N_c).-0.5
 
@@ -1446,9 +1904,9 @@ begin
 end
 
 N_c = 8
-n_epochs = 200
+n_epochs = 3000
 θ = zeros(((4*N_c)+1), n_epochs)
-θ[((4*N_c)+1), 1] = 400
+θ[((4*N_c)+1), 1] = 124
 r = zeros((4*N_c), n_epochs)
 r[:, 1] = rand(4*N_c).-0.5
 
@@ -1460,7 +1918,7 @@ begin
         θ[:, 1] = θ_latest
     end
     cost_values = zeros(n_epochs)
-    schedules = zeros(n_steps, n_epochs)
+    # transition_probabilities = zeros(n_steps-20, n_epochs)
     Δ_schedules = zeros(n_steps, n_epochs)
     Ω_schedules = zeros(n_steps, n_epochs)
     η = 0.001
@@ -1481,9 +1939,10 @@ begin
         end
 
         # grad, states, h_array, cost_value_i, schedule_i, Δ_i, Ω_i = gradient(θ[:, i]-γ*prev_step, r[:, i], true)
-        grad, states, h_array, cost_value_i, schedule_i, Δ_i, Ω_i = gradient3(θ[:, i], r[:, i], true)
+        # grad, states, h_array, cost_value_i, δ_i, Δ_i, Ω_i = gradient3(θ[:, i], r[:, i], true)
+        grad, states, h_array, cost_value_i, Δ_i, Ω_i = gradient3(θ[:, i], r[:, i], true)
         cost_values[i] = cost_value_i
-        schedules[:, i] = schedule_i
+        # transition_probabilities[:, i] = δ_i
         Δ_schedules[:, i] = -1*Δ_i[:, 1, 1]./Δ_i[1, 1, 1]
         Ω_schedules[:, i] = Ω_i[:, 1, 1]./Ω_max[1, 1]
 
@@ -1496,12 +1955,13 @@ begin
         end
 
         if i < n_epochs
+            r[:, i+1] = r[:, i]
             δθ = zeros(((4*N_c)+1))
             for j in 1:((4*N_c)+1)
-                # δθ[j] = -1*η*grad[j]/sqrt(running_average[j]+ϵ)
+                δθ[j] = -1*η*grad[j]/sqrt(running_average[j]+ϵ)
                 # δθ[j] = -1*sqrt(running_δθ[j]+ϵ)*grad[j]/sqrt(running_average[j]+ϵ)
                 # δθ[j] = γ*prev_step + η*grad[j]
-                δθ[j] = (-1*η*m_t[j]/(sqrt(v_t[j])+ϵ))*(β1*m_t[j] + (1 - β1)*grad[j]/(1 - β1^i))
+                # δθ[j] = (-1*η*m_t[j]/(sqrt(v_t[j])+ϵ))*(β1*m_t[j] + (1 - β1)*grad[j]/(1 - β1^i))
             end
             δθ[((4*N_c)+1)] = sign(δθ[((4*N_c)+1)])*ceil(abs(δθ[((4*N_c)+1)]))
             θ[:, i+1] = θ[:, i] + δθ[:]
@@ -1515,52 +1975,177 @@ begin
     end
 end
 
+N_c = 8
+n_epochs = 500
+θ = zeros(((4*N_c)), n_epochs)
+r = zeros((4*N_c), n_epochs)
+r[:, 1] = rand(4*N_c).-0.5
+
+# optimisation process 4
+begin
+    if θ[:, n_epochs] != zeros(((4*N_c)))
+        θ_latest = θ[:, n_epochs]
+        θ = zeros(((4*N_c)), n_epochs)
+        θ[:, 1] = θ_latest
+    end
+    cost_values = zeros(n_epochs)
+    schedules = zeros(n_steps, n_epochs)
+    Δ_schedules = zeros(n_steps, n_epochs)
+    Ω_schedules = zeros(n_steps, n_epochs)
+    η = 0.001
+    γ = 0.9
+    ϵ = 1e-8
+    running_average = zeros(((4*N_c)))
+    running_δθ = zeros(((4*N_c)))
+    counter = 0
+    reset_counter = 0
+    for i in 1:n_epochs
+
+        if i > 1
+            prev_step = θ[:, i] - θ[:, i-1]
+        else
+            prev_step = zeros(((4*N_c)))
+        end
+
+        grad, states, h_array, cost_value_i, Δ_i, Ω_i = gradient4(θ[:, i], r[:, i], true)
+        cost_values[i] = cost_value_i
+        Δ_schedules[:, i] = -1*Δ_i[:, 1, 1]./Δ_i[1, 1, 1]
+        Ω_schedules[:, i] = Ω_i[:, 1, 1]./Ω_max[1, 1]
+
+        for j in 1:((4*N_c))
+            running_average[j] = γ*running_average[j] + (1-γ)*(grad[j]^2)
+        end
+
+        if i < n_epochs
+            r[:, i+1] = r[:, i]
+            δθ = zeros(((4*N_c)))
+            for j in 1:((4*N_c))
+                δθ[j] = -1*η*grad[j]/sqrt(running_average[j]+ϵ)
+                # δθ[j] = -1*sqrt(running_δθ[j]+ϵ)*grad[j]/sqrt(running_average[j]+ϵ)
+                # δθ[j] = γ*prev_step + η*grad[j]
+            end
+            θ[:, i+1] = θ[:, i] + δθ[:]
+
+            for j in 1:((4*N_c))
+                running_δθ[j] = γ*running_δθ[j] + (1-γ)*(δθ[j]^2)
+            end
+
+        end
+        println((i/n_epochs)*100)
+    end
+end
+
 θ_latest = θ[:, n_epochs]
 r_latest = r[:, n_epochs]
 θ
 r
 
+show(θ_latest)
+show(r_latest)
+
+
 θ_default = zeros(((4*N_c)+1))
 θ_default = zeros(((4*N_c)))
-θ_default[((4*N_c)+1)] = 500
-# θ_latest[((4*N_c)+1)] = 21
+θ_default[((4*N_c)+1)] = 124
+
 states, h_array, cost_value_1, schedule_1, Δ1, Ω1 = costfn(θ_default, zeros((4*N_c)), true)
 states, h_array, cost_value_2, schedule_2, Δ, Ω = costfn(θ_latest, r_latest, true)
 states, h_array, cost_value_1, schedule_1, Δ1, Ω1 = costfn2(θ_default, zeros((4*N_c)), true)
 states, h_array, cost_value_2, schedule_2, Δ, Ω = costfn2(θ_latest, r_latest, true)
-states, h_array, cost_value_1, schedule_1, Δ1, Ω1 = costfn3(θ_default, zeros((4*N_c)), true)
-states, h_array, cost_value_2, schedule_2, Δ, Ω = costfn3(θ_latest, r_latest, true)
+states, h_array, cost_value_1, Δ1, Ω1 = costfn3(θ_default, zeros((4*N_c)), true)
+states, h_array, cost_value_2, Δ, Ω = costfn3(θ_latest, r_latest, true)
+states, h_array, cost_value_1, Δ1, Ω1 = costfn4(θ_default, zeros((4*N_c)), true)
+states, h_array, cost_value_2, Δ, Ω = costfn4(θ_latest, r_latest, true)
 cost_value_2
 cost_value_1
-plot(1:n_steps, [-1*Δ1[:, 1, 1]./Δ1[1, 1, 1], Ω1[:, 1, 1]./Ω1[Int(round(n_steps/2)), 1, 1], -1*Δ[:, 1, 1]./Δ[1, 1, 1], Ω[:, 1, 1]./Ω[Int(round(n_steps/2)), 1, 1]], lc=[:blue :red :deepskyblue :orange])
-plot(1:n_epochs, cost_values)
-colours = cgrad([:lightsalmon1, :darkred], n_epochs)
-plot(1:n_steps, [Δ_schedules[:, i] for i in 1:n_epochs], legend=false, lc = transpose([colours[i] for i in 1:n_epochs]))
-plot(1:Int(round(θ[((4*N_c)+1), 1])), [Ω_schedules[1:Int(round(θ[((4*N_c)+1), 1])), i] for i in 1:n_epochs], legend=false, lc = transpose([colours[i] for i in 1:n_epochs]))
-plot(1:n_steps, [Ω_schedules[:, i] for i in 1:n_epochs], legend=false, lc = transpose([colours[i] for i in 1:n_epochs]))
-sum([abs(cost_values[i]-cost_values[i-1]) for i in 49:49])/1
-reset_counter
-counter
 
-evolve_time = (1e-7)*(21//20)
-states_2 = states
-states
-states_2 == states
+
+evolve_time = (1e-6)*(21//20)
+ts = [(i-1)*(evolve_time/n_steps) for i in 1:(n_steps+1)]
+# parameter plot before vs after optimisation
+begin
+    plot(1:n_steps, [-1*Δ1[:, 1, 1]./Δ1[1, 1, 1], Ω1[:, 1, 1]./Ω1[Int(round(n_steps/2)), 1, 1], -1*Δ[:, 1, 1]./Δ[1, 1, 1], Ω[:, 1, 1]./Ω[Int(round(n_steps/2)), 1, 1]], lc=[:blue :red :deepskyblue :orange], lw=3, size=(750,500), label=[L"\Delta_0(t)" L"\Omega_0(t)" L"\Delta_{CRAB}(t)" L"\Omega_{CRAB}(t)"])
+    dt = ts[2]-ts[1]
+    xtickers = [0, Int(round(n_steps*(97//840))), n_steps/4, n_steps/2, 3*n_steps/4, Int(round(n_steps*(41//42))), n_steps]
+    xtickerlabels = [L"0.0", L"", L"0.25", L"0.50", L"0.75", L"", L"1.0"]
+    xtickerlabels[2] = ""
+    xtickerlabels[6] = ""
+    xticks!(xtickers, xtickerlabels)
+    xlabel!(L"t / T")
+    ylabel!(L"\mathrm{Parameter/Max}")
+    ylims!(-1.1, 1.2)
+    yticks!([-1, -0.5, 0, 0.5, 1], [L"-1.0", L"-0.5", L"0.0", L"0.5", L"1.0"])
+end
+
+gs_eig = (1e-8)*inst_eigvals[1, n_steps]
+# cost function plot
+begin
+    plot(1:n_epochs, cost_values, lw=3, size=(750,500), legend=false)
+    xtickers = [0, n_epochs/5, 2*n_epochs/5, 3*n_epochs/5, 4*n_epochs/5, n_epochs]
+    xtickerlabels = @.latexstring(@.Int(xtickers))
+    xticks!(xtickers, xtickerlabels)
+    xlims!(-100, n_epochs+100)
+    ytickers = [-960, -970, -980, -990, -1000]
+    # ytickers = [-0.98, -0.97, -0.96, -0.95, -0.94]
+    ytickerlabels = @.latexstring(ytickers)
+    yticks!(ytickers, ytickerlabels)
+    # ylims!(-0.985, -0.935)
+    xlabel!(L"\mathrm{Iteration}")
+    ylabel!(L"\mathcal{C}(\theta)")
+    ylims!(-1007, -955)
+end
+
+# infidelity over epochs plot
+begin
+    infidelities = zeros(n_epochs)
+    for i in 1:n_epochs
+        states, h_array, cv, sc, de, om = costfn(θ[:, i], r[:, i], true)
+
+        excited_state = [0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0]
+        infidelities[i] = 1 - sum(real(conj(states[:, n_steps+1]).*states[:, n_steps+1]).*excited_state)
+        println(i*100/n_epochs)
+    end
+    plot(collect(1:n_epochs), infidelities)
+end
+
+# detuning schedule evolution plot
+begin
+    optcolours = cgrad([:lightsalmon1, :darkred], Int(n_epochs/10))
+    plot(1:n_steps, [Δ_schedules[:, 10*i] for i in 1:Int(n_epochs/10)], legend=false, lc = transpose([optcolours[i] for i in 1:Int(n_epochs/10)]))
+    dt = ts[2]-ts[1]
+    xtickers = [0, Int(round(n_steps*(97//840))), n_steps/4, n_steps/2, 3*n_steps/4, Int(round(n_steps*(41//42))), n_steps]
+    xtickerlabels = [L"0.0", L"", L"0.25", L"0.50", L"0.75", L"", L"1.0"]
+    xtickerlabels[2] = ""
+    xtickerlabels[6] = ""
+    xticks!(xtickers, xtickerlabels)
+    xlabel!(L"t / T")
+    ylabel!(L"\mathrm{\Delta/\Delta_{max}}")
+    ylims!(-1.1, 1.2)
+    yticks!([-1, -0.5, 0, 0.5, 1], [L"-1.0", L"-0.5", L"0.0", L"0.5", L"1.0"])
+end
+
+# rabi schedule evolution plot
+begin
+    optcolours = cgrad([:lightsalmon1, :darkred], Int(n_epochs/5))
+    plot(1:145, [Ω_schedules[1:145, i*5] for i in 1:Int(n_epochs/5)], legend=false, lc = transpose([optcolours[i] for i in 1:Int(n_epochs/5)]))
+    # plot(1:n_steps, [Ω_schedules[:, i] for i in 1:n_epochs], legend=false, lc = transpose([optcolours[i] for i in 1:n_epochs]))
+    dt = ts[2]-ts[1]
+    xtickers = [0, Int(round((1/4)n_steps*(124/840))), Int(round((2/4)n_steps*(124/840))), Int(round((3/4)n_steps*(124/840))), Int(n_steps*(124/840))]
+    xtickerlabels = [L"0.0", L"0.25", L"0.50", L"0.75", L"1.0"]
+    xticks!(xtickers, xtickerlabels)
+    xlabel!(L"t / t_{i}")
+    ylabel!(L"\mathrm{\Omega/\Omega_{max}}")
+    ylims!(0, 1)
+    xlims!(0, 124)
+    yticks!([-1, -0.5, 0, 0.5, 1], [L"-1.0", L"-0.5", L"0.0", L"0.5", L"1.0"])
+end
+
+plot(1:n_steps, [-1*Δ1[:, 1, 1]./Δ1[1, 1, 1], Ω1[:, 1, 1]./Ω1[Int(round(n_steps/2)), 1, 1]])
+evolve_time = (1e-6)*(21//20)
 states, h_array_2 = trotter_evolve(h_array, initial_state, evolve_time)
 
-
-grad = gradient(θ[:, 10], r[:, 10])
-δθ = zeros(((4*N_c)+1))
-for j in ((4*N_c)+1)
-    δθ[j] = 0.0001
-end
-costfn(θ[:, 10], r[:, 10])
-costfn(θ[:, 10]+δθ, r[:, 10])
-θ[((4*N_c)+1), n_epochs]
-cost_value, deltas, omegas = costfn(θ_latest, r_latest)
-plot(1:n_steps, [-1*deltas[:, 1, 1]./deltas[1, 1, 1], Δ_sched_2])
-plot(1:n_steps, [-1*omegas[:, 1, 1]./omegas[1, 1, 1], Ω_sched_2])
-
+path = raw"C:\Users\Plowa\Programming\Projects\Durham\Project 2526\Figures\3 vertex triangle\Optimised\Avg GS fidelity cost fn (2)\Optimisation plots"
+savefig(joinpath(path, "rabi_evolution.svg"))
 
 # uniform 1 vertex symmetry breaking for 3 atom triangular graph, timesweep variations
 begin
@@ -1744,11 +2329,11 @@ end
 
 # gaussian 3 vertex symmetry breaking for 3 atom triangular graph, timesweep variations
 begin
-    # n_repetitions = 5
+    n_repetitions = 5
     # n_timesweeps = 100
     # n_offsets = 20
-    n_repetitions = 11
-    n_timesweeps = 200
+    # n_repetitions = 11
+    n_timesweeps = 300
     n_offsets = 100
     fidelities_total = zeros(n_offsets, size(initial_state)[1])
     Δ_constraints = [(c6[i,i]/(lattice_spacing^6))-(Δ_max[1,i]) for i in eachindex(Δ_max[1,:])]*1e-1
@@ -1757,8 +2342,9 @@ begin
     Δ_off = zeros(2, size(node_locations)[1], n_offsets)
     total_final_prob = zeros(n_offsets, n_timesweeps, n_repetitions)
     average_final_prob = zeros(n_timesweeps, n_repetitions)
-    times = LinRange(1e-7,5e-6, n_timesweeps)*(21//20)
-    offset_factors = LinRange(-1, 1, n_repetitions)
+    times = LinRange(1e-9,8e-6, n_timesweeps)*(21//20)
+    # offset_factors = LinRange(-1, 1, n_repetitions)
+    offset_factors = LinRange(1e-3, 1, n_repetitions)
 
     for q in 1:n_repetitions
         for p in 1:n_timesweeps
@@ -1766,11 +2352,11 @@ begin
                 for l in 1:rydberg_states
                     for n in 1:size(Δ)[3]
                     # for n in size(Δ)[3]
-                        # random_offset = Δ_constraints[l]*randn()
-                        random_offset = Δ_constraints[l]*((randn())+offset_factors[q])
+                        random_offset = Δ_constraints[l]*randn()
+                        # random_offset = Δ_constraints[l]*((randn())+offset_factors[q])
                         Δ_off[l, n, k] = random_offset
-                        # Δ[:, l, n] = Δ[:, l, n] .+ Δ_off[l, n, k]*offset_factors[q]
-                        Δ[:, l, n] = Δ[:, l, n] .+ Δ_off[l, n, k]
+                        Δ[:, l, n] = Δ[:, l, n] .+ Δ_off[l, n, k]*offset_factors[q]
+                        # Δ[:, l, n] = Δ[:, l, n] .+ Δ_off[l, n, k]
                     end
                 end
 
@@ -1779,12 +2365,13 @@ begin
                 for l in 1:rydberg_states
                     for n in 1:size(Δ)[3]
                     # for n in size(Δ)[3]
-                        # Δ[:, l, n] = Δ[:, l, n] .- Δ_off[l, n, k]*offset_factors[q]
-                        Δ[:, l, n] = Δ[:, l, n] .- Δ_off[l, n, k]
+                        Δ[:, l, n] = Δ[:, l, n] .- Δ_off[l, n, k]*offset_factors[q]
+                        # Δ[:, l, n] = Δ[:, l, n] .- Δ_off[l, n, k]
                     end
                 end
                 basis_prob = @.real(states[:, (n_steps+1)].*conj(states[:, (n_steps+1)]))
                 total_final_prob[k, p, q] = basis_prob[6] + basis_prob[8] + basis_prob[12] + basis_prob[16] + basis_prob[20] + basis_prob[22]
+                println(100*(k/(n_offsets*n_timesweeps*n_repetitions) + (p-1)/(n_timesweeps*n_repetitions) + (q-1)/n_repetitions))
             end
         end
 
@@ -1796,31 +2383,93 @@ begin
             average_final_prob[t, q] = p_t_tot./(n_offsets)
         end
     end
-    # colourgrad = cgrad([:aqua, :magenta], (n_repetitions))
-    # b = plot(collect(1:n_timesweeps), average_final_prob[:, 1], lc=colourgrad[1])
-    # for q in 2:n_repetitions
-    #     b = plot!(collect(1:n_timesweeps), average_final_prob[:, q], lc=colourgrad[q])
-    # end
-    # display(b)
-
-    b = plot(times*1e6, average_final_prob[:, 1], lc=:darkgreen, label=L"-0.1", legend=:bottomright)
-    for q in 2:5
-        b = plot!(times*1e6, average_final_prob[:, q], lc=cgrad([:darkgreen, :palegreen], 5)[q], label=latexstring(round(0.1*offset_factors[q], sigdigits=2)), legend=:bottomright)
-    end
-    b = plot!(times*1e6, average_final_prob[:, 6], lc=:blue, label=L"0", legend=:bottomright)
-    for q in 7:11
-        b = plot!(times*1e6, average_final_prob[:, q], lc=cgrad([:lightsalmon, :darkred], 5)[q-6], label=latexstring(round(0.1*offset_factors[q], sigdigits=2)), legend=:bottomright)
+    colourgrad = cgrad([:aqua, :magenta], (n_repetitions))
+    b = plot(collect(1:n_timesweeps), average_final_prob[:, 1], lc=colourgrad[1])
+    for q in 2:n_repetitions
+        b = plot!(collect(1:n_timesweeps), average_final_prob[:, q], lc=colourgrad[q])
     end
     display(b)
+
+    # b = plot(times*1e6, average_final_prob[:, 1], lc=:darkgreen, label=L"-0.1", legend=:bottomright)
+    # for q in 2:5
+    #     b = plot!(times*1e6, average_final_prob[:, q], lc=cgrad([:darkgreen, :palegreen], 5)[q], label=latexstring(round(0.1*offset_factors[q], sigdigits=2)), legend=:bottomright)
+    # end
+    # b = plot!(times*1e6, average_final_prob[:, 6], lc=:blue, label=L"0", legend=:bottomright)
+    # for q in 7:11
+    #     b = plot!(times*1e6, average_final_prob[:, q], lc=cgrad([:lightsalmon, :darkred], 5)[q-6], label=latexstring(round(0.1*offset_factors[q], sigdigits=2)), legend=:bottomright)
+    # end
+    # display(b)
 
     ylabel!(L"\mathrm{Fidelity, }F")
     yticks!([0, 0.2, 0.4, 0.6, 0.8, 1], [L"0", L"0.2", L"0.4", L"0.6", L"0.8", L"1.0"])
     ylims!(0, 1)
     xlabel!(L"\mathrm{Timesweep}"*" "*L"\mathrm{Duration,}"*L"T / \mu \mathrm{s}")
-    xticks!([0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0], @.latexstring([0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]))
+    # xticks!([0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0], @.latexstring([0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]))
     # xticks!([0.1, 1.0, 2.0, 3.0, 4.0, 5.0], @.latexstring([0.1, 1.0, 2.0, 3.0, 4.0, 5.0]))
-    xlims!(0.1,1)
+    xlims!(0,8.4)
 end
+
+colourgrad = cgrad([:aqua, :magenta], (n_repetitions))
+b = plot(collect(1:n_timesweeps), average_final_prob[:, 1], lc=colourgrad[1])
+for q in 2:n_repetitions
+    b = plot!(collect(1:n_timesweeps), average_final_prob[:, q], lc=colourgrad[q])
+end
+display(b)
+
+smoothed_final_prob = movmean(average_final_prob, 2)
+
+log_prob = @.log(10, -1(smoothed_final_prob.-1))
+b = plot(times*1e6, log_prob[:, 1], lc=:darkgreen, label=L"-0.1", legend=false)
+for q in 2:5
+    b = plot!(times*1e6, log_prob[:, q], lc=cgrad([:darkgreen, :palegreen], 5)[q], label=latexstring(round(0.1*offset_factors[q], sigdigits=2)), legend=false)
+end
+b = plot!(times*1e6, log_prob[:, 6], lc=:blue, label=L"0", legend=false)
+for q in 7:11
+    b = plot!(times*1e6, log_prob[:, q], lc=cgrad([:lightsalmon, :darkred], 5)[q-6], label=latexstring(round(0.1*offset_factors[q], sigdigits=2)), legend=false)
+end
+display(b)
+
+b = plot(times*1e6, smoothed_final_prob[:, 1], lc=:darkgreen, label=L"-0.1", legend=false)
+for q in 2:5
+    b = plot!(times*1e6, smoothed_final_prob[:, q], lc=cgrad([:darkgreen, :palegreen], 5)[q], label=latexstring(round(0.1*offset_factors[q], sigdigits=2)), legend=false)
+end
+b = plot!(times*1e6, smoothed_final_prob[:, 6], lc=:blue, label=L"0", legend=false)
+for q in 7:11
+    b = plot!(times*1e6, smoothed_final_prob[:, q], lc=cgrad([:lightsalmon, :darkred], 5)[q-6], label=latexstring(round(0.1*offset_factors[q], sigdigits=2)), legend=false)
+end
+display(b)
+
+b = plot(times*1e6, log_prob[:, 1], lc=colourgrad[1], label=latexstring(round(0.0*offset_factors[1], sigdigits=2)), lw=2)
+for q in 2:n_repetitions
+    b = plot!(times*1e6, log_prob[:, q], lc=colourgrad[q], label=latexstring(round(0.1*offset_factors[q], sigdigits=2)), lw=2)
+end
+display(b)
+
+ylogticks = zeros(Float64, 51)
+ylogticks[1] = 1.0
+for i in 1:5
+    ylogticks[i*10 + 1] = 10^(-float(i))
+    ylogticks[((i-1)*10 + 1):(i*10 + 1)] .= LinRange(10^(-float(i)+1), 10^(-float(i)), 11)
+end
+ylogtickers = [ylogticks[i] for i in 1:31]
+ytickers = @.log(10, ylogtickers)
+ytickerlabels = ["" for i in 1:51]
+ytickerlabels[((1-1)*10 + 1)] = L"10^{0}"
+ytickerlabels[((2-1)*10 + 1)] = L"10^{-1}"
+ytickerlabels[((3-1)*10 + 1)] = L"10^{-2}"
+ytickerlabels[((4-1)*10 + 1)] = L"10^{-3}"
+ytickerlabels[((5-1)*10 + 1)] = L"10^{-4}"
+yticks!(ytickers, ytickerlabels)
+ylabel!(L"\mathrm{Infidelity, } \mathcal{I}")
+ylabel!(L"\mathrm{Fidelity, }F")
+yticks!([0, 0.2, 0.4, 0.6, 0.8, 1], [L"0", L"0.2", L"0.4", L"0.6", L"0.8", L"1.0"])
+ylims!(0.99, 1)
+ylims!(-3, 0)
+xlabel!(L"\mathrm{Timesweep}"*" "*L"\mathrm{Duration,}"*L"T / \mu \mathrm{s}")
+xticks!([0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0], @.latexstring([0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]))
+# xticks!([0.1, 1.0, 2.0, 3.0, 4.0, 5.0], @.latexstring([0.1, 1.0, 2.0, 3.0, 4.0, 5.0]))
+xlims!(0,8)
+xticks!([0, 2, 4, 6, 8], @.latexstring([0, 2, 4, 6, 8]))
 
 # timesweep symmetry breaking 3 atom triangular graph uniform vs gaussian offset
 begin
@@ -1948,7 +2597,8 @@ begin
     plot(collect(1:n_offsets), fidelity_loss_points)
 end
 
-path = raw"C:\Users\Plowa\Programming\Projects\Durham\Project 2526\Figures\3 vertex triangle"
+path = raw"C:\Users\Plowa\Programming\Projects\Durham\Project 2526\Figures\3 vertex triangle\perturbed\Gaussian 3 vertex\averages\timesweep variations\std variations\mean 0"
+savefig(joinpath(path, "infidelity_logplot.svg"))
 for i in 1:100
     plot(collect(1:size(fidelities_total)[2]), fidelities_total[i,:])
     savefig(joinpath(path, "3atom_symbreak_sweep_"*string(i)*".svg"))
@@ -2074,7 +2724,7 @@ end
 # eigenspectrum decomp Arnoldi for 3 vertex gaussian offset
 begin
     evolve_time = 8e-6*(21//20)
-    n_offsets = 100
+    n_offsets = 1
     Δ_constraints = [(c6[i,i]/(lattice_spacing^6))-(Δ_max[1,i]) for i in eachindex(Δ_max[1,:])]*1e-5
     # Δ_constraints = [(2pi*120*1e3)*4 for i in eachindex(Δ_max[1,:])]
     Δ_off = zeros(2, size(node_locations)[1], n_offsets)
@@ -2082,6 +2732,7 @@ begin
     eig_fidelities_total = zeros(n_eig, n_steps, n_offsets)
     inst_eigvals_total = zeros(Float64, n_eig, n_steps, n_offsets)
     inst_eigvecs_total = zeros(ComplexF64, size(initial_state)[1], n_eig, n_steps, n_offsets)
+    fidelities_total = zeros(n_steps+1, n_offsets)
     offset_factor = 0
 
     for q in 1:n_offsets
@@ -2094,6 +2745,9 @@ begin
         end
 
         states, h_array = trotter_evolve(total_hamiltonian(n_steps), initial_state, evolve_time)
+
+        excited_state = [0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0]
+        fidelities_total[:, q] .= [sum(real(conj(states[:, i]).*states[:, i]).*excited_state) for i in 1:(n_steps+1)]
 
         for i in 1:(n_steps)
             h_sparse = h_array[:,:,i] |> sparse
@@ -2116,15 +2770,19 @@ begin
                 Δ[:, l, n] = Δ[:, l, n] .- Δ_off[l, n, q]
             end
         end
+        println(q*100/n_offsets)
     end
+    fidelities = zeros(n_steps+1)
     eig_fidelities = zeros(n_eig, n_steps)
     inst_eigvals = zeros(Float64, n_eig, n_steps)
     inst_eigvecs = zeros(ComplexF64, size(initial_state)[1], n_eig, n_steps)
     for m in 1:n_offsets
+        fidelities = fidelities[:] .+ fidelities_total[:, m]
         eig_fidelities = eig_fidelities .+ eig_fidelities_total[:, :, m]
         inst_eigvals = inst_eigvals .+ inst_eigvals_total[:, :, m]
         inst_eigvecs = inst_eigvecs .+ inst_eigvecs_total[:, :, :, m]
     end
+    fidelities = fidelities./n_offsets
     eig_fidelities = eig_fidelities./n_offsets
     inst_eigvals = inst_eigvals./n_offsets
     inst_eigvecs = inst_eigvecs./n_offsets
@@ -2166,6 +2824,43 @@ begin
     end
 end
 
+# fidelity over a single timesweep (updated graphics)
+begin
+    state_space = zeros(size(initial_state)[1], size(initial_state)[1])
+    fidelities = zeros(n_steps+1)
+
+    for i in 1:size(initial_state)[1]
+        state_space[i,i] = 1
+    end
+
+    p_final = [real(dot(states[:,n_steps+1], state_space[i,:])*(dot(states[:,n_steps+1], state_space[i,:])')) for i in 1:size(state_space)[1]]
+    state_indices = []
+    for i in eachindex(p_final)
+        if p_final[i] > 0.14
+            push!(state_indices, i)
+        end
+    end
+    state_indices = [6, 8, 12, 16, 20, 22]
+
+    for j in 1:(n_steps+1)
+        p2 = [real(dot(states[:,j], state_space[i,:])*(dot(states[:,j], state_space[i,:])')) for i in 1:size(state_space)[1]]
+        fidelities[j] = sum([p2[i] for i in state_indices])
+    end
+    
+    # plot(collect(1:(n_steps+1))[100:200], [(fidelities[100:200].-0.95).*20, (f.-0.99).*200, [cos(e_gap[i]*(8.4*i*1e-6/n_steps)) for i in 100:200]])
+    plot(ts*1e6, fidelities, label=L"$| \langle \Psi |$$S_{3}$ $ \rangle $$| $$^2$", linewidth=3)
+    xlabel!(L"t / \mu \mathrm{s}")
+    ylabel!(L"\mathrm{Fidelity, }F")
+    xlims!(0, evolve_time*1e6)
+    ylims!(0, 1)
+    xtickers = [0, evolve_time*1e6*(20//840), evolve_time*1e6*0.25, evolve_time*1e6*0.5, evolve_time*1e6*0.75, (evolve_time*1e6-evolve_time*1e6*(1//42)), evolve_time*1e6]
+    xtickerlabels = @.latexstring(@.round(xtickers, sigdigits=2))
+    xtickerlabels[2] = ""
+    xtickerlabels[6] = ""
+    xticks!(xtickers, xtickerlabels)
+    yticks!([0, 0.2, 0.4, 0.6, 0.8, 1], [L"0", L"0.2", L"0.4", L"0.6", L"0.8", L"1.0"])
+end
+
 # noise simulation
 begin
     ϕ=zeros(n_steps, rydberg_states, size(node_locations)[1])
@@ -2188,10 +2883,7 @@ begin
     inst_eigvecs_total = zeros(ComplexF64, size(initial_state)[1], n_eig, n_steps, n_offsets)
     density_operators_eig_total = zeros(ComplexF64, size(initial_state)[1], size(initial_state)[1], n_eig, n_steps, n_offsets)
     density_operator_state_total = zeros(ComplexF64, size(initial_state)[1], size(initial_state)[1], n_steps, n_offsets)
-    δ_total = zeros(n_steps, n_offsets)
-    berry_total = zeros(ComplexF64, n_steps, n_eig, n_offsets)
-    dynamic_total = zeros(n_steps, n_eig, n_offsets)
-    total_phase_total = zeros(ComplexF64, n_steps, n_eig, n_offsets)
+
     for q in 1:n_offsets
         for l in 1:rydberg_states
             smoothness_offset = zeros(size(Δ)[3])
@@ -2271,17 +2963,6 @@ begin
             end
         end
 
-        dt = ts[2]-ts[1]
-        # delta computation
-        for i in 1:(n_steps-1)
-            transition_prob = sqrt(abs(real(((inst_eigvecs_total[:, 2, i, q]')*((h_array_total[:, :, i+1, q]-h_array_total[:, :, i, q])./(1*dt))*inst_eigvecs_total[:, 1, i, q])*conj(((inst_eigvecs_total[:, 2, i, q]')*(h_array_total[:, :, i+1, q]-h_array_total[:, :, i, q])./(1*dt)*inst_eigvecs_total[:, 1, i, q])))[1]))
-            e_gap_term = 1/((inst_eigvals_total[2, i, q]-inst_eigvals_total[1, i, q])^2)
-            δ_total[i, q] = transition_prob*e_gap_term
-            # δ[i] = e_gap_term
-            # δ[i] = transition_prob
-        end
-        δ_total[n_steps, q] = δ_total[n_steps-1, q]
-
         excited_state = [0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0]
         state_fidelities_total[:, q] = [sum(real(conj(states_total[:, i, q]).*states_total[:, i, q]).*excited_state) for i in 1:n_steps]
 
@@ -2301,7 +2982,6 @@ begin
     inst_eigvecs = zeros(ComplexF64, size(initial_state)[1], n_eig, n_steps)
     density_operators_eig = zeros(ComplexF64, size(initial_state)[1], size(initial_state)[1], n_eig, n_steps)
     density_operator_state = zeros(ComplexF64, size(initial_state)[1], size(initial_state)[1], n_steps)
-    δ = zeros(n_steps)
     for m in 1:n_offsets
         state_fidelities = state_fidelities .+ state_fidelities_total[:, m]
         states = states .+ states_total[:, :, m]
@@ -2311,7 +2991,6 @@ begin
         inst_eigvecs = inst_eigvecs .+ inst_eigvecs_total[:, :, :, m]
         density_operators_eig = density_operators_eig .+ density_operators_eig_total[:, :, :, :, m]
         density_operator_state = density_operator_state .+ density_operator_state_total[:, :, :, m]
-        δ = δ .+ δ_total[:, m]
     end
     state_fidelities = state_fidelities./n_offsets
     states = states./n_offsets
@@ -2321,7 +3000,18 @@ begin
     inst_eigvecs = inst_eigvecs./n_offsets
     density_operators_eig = density_operators_eig./n_offsets
     density_operator_state = density_operator_state./n_offsets
-    δ = δ./n_offsets
+
+    dt = ts[2]-ts[1]
+    δ = zeros(n_steps)
+    # delta computation
+    for i in 1:(n_steps-1)
+        for j in 2:n_eig
+            transition_prob = sqrt(abs(real(((inst_eigvecs[:, j, i]')*((h_array[:, :, i+1]-h_array[:, :, i])./(1*dt))*inst_eigvecs[:, 1, i])*conj(((inst_eigvecs[:, j, i]')*(h_array[:, :, i+1]-h_array[:, :, i])./(1*dt)*inst_eigvecs[:, 1, i])))[1]))
+            e_gap_term = 1/((inst_eigvals[2, i]-inst_eigvals[1, i])^2)
+            δ[i] += transition_prob*e_gap_term
+        end
+    end
+    δ[n_steps] = δ[n_steps-1]
 
     berry = zeros(ComplexF64, n_steps, n_eig)
     dynamic = zeros(n_steps, n_eig)
@@ -2358,7 +3048,7 @@ function ground_oscillation_tot(eigenstates, phase_offsets, rangeval=1:n_steps)
     end
     oscillations = [real((phases[i]+total_phase[i,1]*eig_fidelities[1, i])*conj(total_phase[i,1]*eig_fidelities[1, i]+phases[i])) for i in 1:n_steps]
     # oscillations = [real((dynamic[i,eigenstate]+dynamic[i,1])*conj(dynamic[i,1]+dynamic[i,eigenstate])) for i in 1:n_steps]
-    plot(collect(rangeval), [oscillations[rangeval], (fidelities[rangeval])])
+    plot(collect(rangeval), [(fidelities[rangeval].+2.13), oscillations[rangeval].*3], label=["" L"\mathcal{Re}\{e^{i(\theta_1(t)-\theta_7(t))}\}"], lw=2)
 end
 
 function ground_oscillation_berry(eigenstates, phase_offsets, rangeval=1:n_steps)
@@ -2386,13 +3076,175 @@ function ground_oscillation_dynamic(eigenstates, phase_offsets, rangeval=1:n_ste
 end
 
 n_steps
-ground_oscillation_tot([2], [-6], 1:149)
-ground_oscillation_tot([7], [1.7], 1:n_steps)
+ground_oscillation_tot([4], [0], 1:149)
+
+ground_oscillation_tot([7], [2.5], 800:1200)
+xtickers = [800, 900, 1000, 1100, 1200]
+xtickerlabels = @.latexstring(@.round(xtickers.*dt*1e6, sigdigits=2))
+xticks!(xtickers, xtickerlabels)
+xlabel!(L"t / \mu \mathrm{s}")
+ytickers = [2.95, 2.97, 2.99, 3.01]
+ytickerlabels =@.latexstring(@.round(ytickers.-2.13, sigdigits=2))
+yticks!(ytickers, ytickerlabels)
+ylabel!(L"\mathrm{Fidelity, }F")
+
 ground_oscillation_berry([10], [0], 1:n_steps)
-ground_oscillation_dynamic([8], [0], 1:n_steps)
+ground_oscillation_dynamic([7], [0], 1:n_steps)
 ground_oscillation_tot([4, 8], [0, 0], 1:n_steps)
 
 plot(collect(1:n_steps), [real(berry[i, 1]) for i in 1:n_steps])
+
+
+Fs = n_steps/evolve_time
+window_length = 300
+window_size = 200
+n_passthroughs = 2
+starting_index = 500
+
+# heatmap fidelity curve oscillations
+begin
+    oscillations_centralised = fidelities
+    for n in 1:n_passthroughs
+        fidelity_average = zeros(n_steps+1-n*window_length)
+        for i in 1:(n_steps+1-n*window_length)
+            fidelity_average[i] = sum(oscillations_centralised[i:i+window_length])/window_length
+        end
+        oscillations_centralised_prev = oscillations_centralised
+        oscillations_centralised = [oscillations_centralised_prev[i] - fidelity_average[i] for i in 1:(n_steps+1-n*window_length)]
+    end
+    # plot(1:(n_steps+1-n_passthroughs*window_length), oscillations_centralised)
+    rolling_power = zeros(length(periodogram(oscillations_centralised[1:1+window_size], fs=Fs).power), n_steps+1-n_passthroughs*window_length-starting_index)
+    rolling_freq = zeros(length(periodogram(oscillations_centralised[1:1+window_size], fs=Fs).freq), n_steps+1-n_passthroughs*window_length-starting_index)
+    f_peaks = zeros(n_steps+1-n_passthroughs*window_length-starting_index)
+    for i in starting_index:(n_steps+1-n_passthroughs*window_length-1)
+        if i > (n_steps+1-n_passthroughs*window_length-window_size-1)
+            oscillations_i = oscillations_centralised[(n_steps+1-n_passthroughs*window_length-window_size-1):(n_steps+1-n_passthroughs*window_length-1)]
+        else
+            oscillations_i = oscillations_centralised[i:i+window_size]
+        end
+        power_i = periodogram(oscillations_i, fs=Fs).power
+        freq_i = periodogram(oscillations_i, fs=Fs).freq
+        f_peaks[i-(starting_index-1)] = freq_i[findmax(power_i)[2]]
+        power_max = power_i[findmax(power_i)[2]]
+        power_i = power_i./power_max
+
+        rolling_power[:, i-(starting_index-1)] .= power_i
+        rolling_freq[:, i-(starting_index-1)] .= freq_i
+    end
+    function hmap(x, y)
+        return rolling_power[y, x]
+    end
+    xs = collect(1:(n_steps+1-n_passthroughs*window_length-1-starting_index))
+    ys = collect(1:length(rolling_power[:, 1]))
+    ys = collect(1:40)
+    heatmap(xs, ys, hmap)
+    # heatmap(rolling_power[1:40, :])
+    # plot(1:length(f_peaks), f_peaks)
+end
+
+# plot with contours for 7 and 13 contributions
+begin
+    function fpeaks7(x, y)
+        if findmax(rolling_power_7[:, x])[2] == y
+            return 1
+        else
+            return 0
+        end
+    end
+    function fpeaksn(x, y)
+        if findmax(rolling_power_n[:, x])[2] == y
+            return 1
+        else
+            return 0
+        end
+    end
+    xs = collect(1:(n_steps+1-n_passthroughs*window_length-1-starting_index))
+    ys = collect(1:length(rolling_power[:, 1]))
+    ys = collect(1:32)
+    p1 = heatmap(xs, ys, hmap, colorbar=false, foreground_color=:black)
+    contour!(xs, ys, (xs, ys) -> fpeaks7(xs, ys), c=:lightblue, lw=0.15)
+    contour!(xs, ys, (xs, ys) -> fpeaksn(xs, ys), c=:red, lw=0.3)
+    xlabel!(L"t / \mu \mathrm{s}")
+    ylabel!(L"\mathrm{Frequency/MHz}")
+    ytickers = collect(1:8).*4
+    ytickerlabels = @.latexstring(@.round([rolling_freq[i, 1]*1e-6 for i in ytickers], sigdigits=2))
+    dt = ts[2]-ts[1]
+    xtickers = [0, 250, 500, 750, 1000, 1250]
+    xtickerlabels = @.latexstring(@.round((xtickers.+500).*dt*1e6, sigdigits=2))
+    xticks!(xtickers, xtickerlabels)
+    yticks!(ytickers, ytickerlabels)
+    p2 = heatmap([1], data2, [data2;;], fg_color=:black, colorbar=false, foreground_color=:black, xaxis=false, ymirror=true, ticks=([0, 0.2, 0.4, 0.6, 0.8, 1], [L"0.0", L"0.2", L"0.4", L"0.6", L"0.8", L"1.0"]), ylabel="")
+
+    l = @layout [a{0.95w} b]
+    plot!(p1, p2, layout=l, tick_direction=:out, size=(750, 500))
+end
+
+# 7th eigenstate vs ground oscillation frequency heatmap/lineplot
+begin
+    phases = zeros(ComplexF64, n_steps)
+    for i in 1:n_steps
+        for j in [7]
+            phases[i] += total_phase[i, 7]*exp(im*-6)*eig_fidelities[7, i]
+        end
+    end
+    oscillations_centralised = [real(phases[i]*conj(total_phase[i, 1])*eig_fidelities[1, i]) for i in 1:n_steps].*(1000/3)
+    rolling_power_7 = zeros(length(periodogram(oscillations_centralised[1:1+window_size], fs=Fs).power), (n_steps+1-n_passthroughs*window_length-starting_index))
+    rolling_freq_7 = zeros(length(periodogram(oscillations_centralised[1:1+window_size], fs=Fs).freq), (n_steps+1-n_passthroughs*window_length-starting_index))
+    f_peaks_7 = zeros(n_steps+1-n_passthroughs*window_length-starting_index)
+    for i in starting_index:(n_steps+1-n_passthroughs*window_length-1)
+        if i > (n_steps+1-n_passthroughs*window_length-window_size-1)
+            oscillations_i = oscillations_centralised[(n_steps+1-n_passthroughs*window_length-window_size-1):(n_steps+1-n_passthroughs*window_length-1)]
+        else
+            oscillations_i = oscillations_centralised[i:i+window_size]
+        end
+        power_i = periodogram(oscillations_i, fs=Fs).power
+        freq_i = periodogram(oscillations_i, fs=Fs).freq
+        f_peaks_7[i-(starting_index-1)] = freq_i[findmax(power_i)[2]]
+        power_max = power_i[findmax(power_i)[2]]
+        power_i = power_i./power_max
+
+        rolling_power_7[:, i-(starting_index-1)] .= power_i
+        rolling_freq_7[:, i-(starting_index-1)] .= freq_i
+    end
+    heatmap(rolling_power_7[1:40, :])
+    # plot(1:length(f_peaks_7), f_peaks_7)
+end
+
+# kth eigenstate vs ground oscillation frequency heatmap/lineplot
+k = 13
+begin
+    phases = zeros(ComplexF64, n_steps)
+    for i in 1:n_steps
+        for j in [k]
+            phases[i] += total_phase[i, k]*exp(im*-6)*eig_fidelities[k, i]
+        end
+    end
+    oscillations_centralised = [real(phases[i]*conj(total_phase[i, 1])*eig_fidelities[1, i]) for i in 1:n_steps].*(1000/3)
+    rolling_power_n = zeros(length(periodogram(oscillations_centralised[1:1+window_size], fs=Fs).power), (n_steps+1-n_passthroughs*window_length-starting_index))
+    rolling_freq_n = zeros(length(periodogram(oscillations_centralised[1:1+window_size], fs=Fs).freq), (n_steps+1-n_passthroughs*window_length-starting_index))
+    f_peaks_n = zeros((n_steps+1-n_passthroughs*window_length-starting_index))
+    for i in starting_index:(n_steps+1-n_passthroughs*window_length-1)
+        if i > (n_steps+1-n_passthroughs*window_length-window_size-1)
+            oscillations_i = oscillations_centralised[(n_steps+1-n_passthroughs*window_length-window_size-1):(n_steps+1-n_passthroughs*window_length-1)]
+        else
+            oscillations_i = oscillations_centralised[i:i+window_size]
+        end
+        power_i = periodogram(oscillations_i, fs=Fs).power
+        freq_i = periodogram(oscillations_i, fs=Fs).freq
+        f_peaks_n[i-(starting_index-1)] = freq_i[findmax(power_i)[2]]
+        power_max = power_i[findmax(power_i)[2]]
+        power_i = power_i./power_max
+
+        rolling_power_n[:, i-(starting_index-1)] .= power_i
+        rolling_freq_n[:, i-(starting_index-1)] .= freq_i
+    end
+    heatmap(rolling_power_n[1:40, :])
+    # plot(1:length(f_peaks_n), f_peaks_n)
+end
+
+rolling_power_10 = rolling_power_n
+rolling_power_n = rolling_power_10
+contour!(xs, ys, (xs, ys) -> fpeaksn(xs, ys), c=:green, lw=0.15)
 
 # one to one comparison of fidelity curve oscillations (ground with state 4/7 oscillations)
 begin
@@ -2407,6 +3259,9 @@ begin
     end
     plot(collect(rangeval), [oscillations_tot_final[(collect(rangeval)[1]+1):(collect(rangeval)[length(rangeval)]+1)].-0.2, fidelities[rangeval]])
 end
+
+path = raw"C:\Users\Plowa\Programming\Projects\Durham\Project 2526\Figures\3 vertex triangle\oscillation plots"
+savefig(joinpath(path, "fidelitymatching_8e-6time_0posoffset.svg"))
 
 # heatmap state space for erroneous eigenvector (original settings 1e-5 std, mean offset 0, 8e-6 sweep)
 begin
@@ -2485,16 +3340,20 @@ begin
         end
     end
     colours = cgrad([:red, :orange, :yellow, :green], [0.05, 0.5, 0.95])
-    p = plot(ts[2:(n_steps-2)]*1e6, inst_eigvals[1, 2:(n_steps-2)]*1e-6/(2pi), lc=colours, line_z=solution_likeness[1, 1:(n_steps-2)], size=(750,500), label="", legend=false, linewidth=1)
-    for i in 2:9
-        p = plot!(ts[2:(n_steps-2)]*1e6, inst_eigvals[i, 2:(n_steps-2)]*1e-6/(2pi), lc=colours, line_z=solution_likeness[i, 1:(n_steps-2)], label="", legend=false,linewidth=1)
+    p = plot(ts[2:(n_steps-2)]*1e6, inst_eigvals[1, 2:(n_steps-2)]*1e-6/(2pi), lc=colours, line_z=solution_likeness[1, 1:(n_steps-2)], size=(750,500), label="", legend=false, linewidth=3)
+    for i in 2:n_eig
+        p = plot!(ts[2:(n_steps-2)]*1e6, inst_eigvals[i, 2:(n_steps-2)]*1e-6/(2pi), lc=colours, line_z=solution_likeness[i, 1:(n_steps-2)], label="", legend=false, linewidth=3)
     end
     ylabel!(L"\mathrm{Energy, }E / (h\mathrm{MHz})")
     xlims!(0, evolve_time*1e6)
     xlabel!(L"t / \mu \mathrm{s}")
     # yticks!([-2, -1, 0, 1], [L"-2.0", L"-1.0", L"0.0", L"1.0"])
     yticks!([-40, -30, -20, -10, 0, 10, 20], @.latexstring([-40, -30, -20, -10, 0, 10, 20]))
-    xticks!([0, evolve_time*1e6*(1//40), evolve_time*1e6*0.25, evolve_time*1e6*0.5, evolve_time*1e6*0.75, (evolve_time*1e6-evolve_time*1e6*(1//40)), evolve_time*1e6], [L"0.0", "", L"2.1", L"4.2", L"6.3", "", L"8.4"])
+    xtickers = [0, evolve_time*1e6*(97//840), evolve_time*1e6*0.25, evolve_time*1e6*0.5, evolve_time*1e6*0.75, (evolve_time*1e6-evolve_time*1e6*(1//42)), evolve_time*1e6]
+    xtickerlabels = @.latexstring(@.round(xtickers, sigdigits=2))
+    xtickerlabels[2] = ""
+    xtickerlabels[6] = ""
+    xticks!(xtickers, xtickerlabels)
     data2 = collect(range(extrema(solution_likeness[1, :])..., 1000))
     p2 = heatmap([1], data2, [data2;;], c=colours, fg_color=:black, colorbar=false, xaxis=false, ymirror=true, ticks=([0, 0.2, 0.4, 0.6, 0.8, 1], [L"0.0", L"0.2", L"0.4", L"0.6", L"0.8", L"1.0"]), ylabel=L"F")
 
@@ -2504,15 +3363,16 @@ end
 
 # fidelity eigenspectrum plot
 begin
-    p = plot(ts[3:n_steps-2]*1e6, inst_eigvals[1, 3:(n_steps-2)]*1e-6/(2pi), lc=cgrad([:gray90, :indigo], [0.05, 0.1, 0.5]), line_z=eig_fidelities[1, 1:(n_steps-2)], size=(750 ,500), legend=false)
-    for i in 2:9
-        p = plot!(ts[3:n_steps-2]*1e6, inst_eigvals[i, 3:(n_steps-2)]*1e-6/(2pi), lc=cgrad([:gray90, :indigo], [0.05, 0.1, 0.5]), line_z=eig_fidelities[i, 1:(n_steps-2)], legend=false)
+    p = plot(ts[3:n_steps-2]*1e6, inst_eigvals[2, 3:(n_steps-2)]*1e-6/(2pi), lc=cgrad([:gray90, :indigo], [0.05, 0.1, 0.5]), line_z=eig_fidelities[2, 1:(n_steps-2)], size=(750,500), legend=false, lw=3)
+    for i in 3:n_eig
+        p = plot!(ts[3:n_steps-2]*1e6, inst_eigvals[i, 3:(n_steps-2)]*1e-6/(2pi), lc=cgrad([:gray90, :indigo], [0.05, 0.1, 0.5]), line_z=eig_fidelities[i, 1:(n_steps-2)], legend=false, lw=3)
     end
+    p = plot!(ts[3:n_steps-2]*1e6, inst_eigvals[1, 3:(n_steps-2)]*1e-6/(2pi), lc=cgrad([:gray90, :indigo], [0.05, 0.1, 0.5]), line_z=eig_fidelities[1, 1:(n_steps-2)], size=(750,500), legend=false, lw=3)
     ylabel!(L"\mathrm{Energy, }E / (h\mathrm{MHz})")
     xlims!(0, evolve_time*1e6)
     xlabel!(L"t / \mu \mathrm{s}")
     yticks!([-40, -30, -20, -10, 0, 10, 20], @.latexstring([-40, -30, -20, -10, 0, 10, 20]))
-    xtickers = [0, evolve_time*1e6*(1//40), evolve_time*1e6*0.25, evolve_time*1e6*0.5, evolve_time*1e6*0.75, (evolve_time*1e6-evolve_time*1e6*(1//40)), evolve_time*1e6]
+    xtickers = [0, evolve_time*1e6*(97//840), evolve_time*1e6*0.25, evolve_time*1e6*0.5, evolve_time*1e6*0.75, (evolve_time*1e6-evolve_time*1e6*(1//42)), evolve_time*1e6]
     xtickerlabels = @.latexstring(@.round(xtickers, sigdigits=2))
     xtickerlabels[2] = ""
     xtickerlabels[6] = ""
@@ -2526,14 +3386,23 @@ end
 
 # fidelity line plot
 begin
-    plot(ts[2:n_steps-2]*1e6, eig_fidelities[1, 2:n_steps-2], label=L"| \langle" * latexstring(1) * L"(t)|" * latexstring(1) * L"(t) \rangle |" * L"^2", lw=2)
-    for i in 2:9
-        plot!(ts[2:n_steps-2]*1e6, eig_fidelities[i, 2:n_steps-2], label=L"| \langle" * latexstring(i) * L"(t)|" * latexstring(i) * L"(t) \rangle |" * L"^2", lw=2)
+    plot(ts[2:n_steps-2]*1e6, eig_fidelities[1, 2:n_steps-2], label=L"| \langle" * latexstring(1) * L"(t)|" * latexstring(1) * L"(t) \rangle |" * L"^2", lw=3, size=(750,500))
+    for i in 2:3
+        plot!(ts[2:n_steps-2]*1e6, eig_fidelities[i, 2:n_steps-2], label="", lw=2)
     end
+    plot!(ts[2:n_steps-2]*1e6, eig_fidelities[4, 2:n_steps-2], label=L"| \langle" * latexstring(4) * L"(t)|" * latexstring(4) * L"(t) \rangle |" * L"^2", lw=3)
+    for i in 5:6
+        plot!(ts[2:n_steps-2]*1e6, eig_fidelities[i, 2:n_steps-2], label="", lw=2)
+    end
+    plot!(ts[2:n_steps-2]*1e6, eig_fidelities[7, 2:n_steps-2], label=L"| \langle" * latexstring(7) * L"(t)|" * latexstring(7) * L"(t) \rangle |" * L"^2", lw=3)
+    for i in 8:n_eig
+        plot!(ts[2:n_steps-2]*1e6, eig_fidelities[i, 2:n_steps-2], label="", lw=2)
+    end
+    plot!(ts[2:n_steps-2]*1e6, eig_fidelities[13, 2:n_steps-2], label=L"| \langle" * latexstring(13) * L"(t)|" * latexstring(13) * L"(t) \rangle |" * L"^2", lw=3, legend=:topright)
     ylabel!(L"\mathrm{Fidelity, }F")
     xlabel!(L"t / \mu \mathrm{s}")
     xlims!(0, ts[n_steps]*1e6)
-    xtickers = [0, (ts[n_steps]*(1//42)), ts[n_steps]*(1/4), ts[n_steps]*(2/4), ts[n_steps]*(3/4), (ts[n_steps]*(41//42)), ts[n_steps]].*1e6
+    xtickers = [0, (ts[n_steps]*(20//840)), ts[n_steps]*(1/4), ts[n_steps]*(2/4), ts[n_steps]*(3/4), (ts[n_steps]*(41//42)), ts[n_steps]].*1e6
     xtickerlabels = @.latexstring(@.round(xtickers, sigdigits=2))
     xtickerlabels[2] = ""
     xtickerlabels[6] = ""
@@ -2545,45 +3414,47 @@ end
 
 # multicoloured eigenspectrum plot
 begin
-    p = plot(ts[10:n_steps-5]*1e6, inst_eigvals[1, 10:(n_steps-5)]*1e-6/(2pi), size=(750,500), legend=false)
-    for i in 2:9
-        p = plot!(ts[10:n_steps-5]*1e6, inst_eigvals[i, 10:(n_steps-5)]*1e-6/(2pi), legend=false)
+    p = plot(ts[10:n_steps-5]*1e6, inst_eigvals[1, 10:(n_steps-5)]*1e-6/(2pi), size=(750,500), legend=false, linewidth=3)
+    for i in 2:n_eig
+        p = plot!(ts[10:n_steps-5]*1e6, inst_eigvals[i, 10:(n_steps-5)]*1e-6/(2pi), legend=false, linewidth=3)
     end
     display(p)
     ylabel!(L"\mathrm{Energy, }E / (h\mathrm{MHz})")
     xlims!(0, evolve_time*1e6)
     xlabel!(L"t / \mu \mathrm{s}")
     yticks!([-40, -30, -20, -10, 0, 10, 20], @.latexstring([-40, -30, -20, -10, 0, 10, 20]))
-    xtickers = [0, evolve_time*1e6*(1//40), evolve_time*1e6*0.25, evolve_time*1e6*0.5, evolve_time*1e6*0.75, (evolve_time*1e6-evolve_time*1e6*(1//40)), evolve_time*1e6]
+    xtickers = [0, evolve_time*1e6*(97//840), evolve_time*1e6*0.25, evolve_time*1e6*0.5, evolve_time*1e6*0.75, (evolve_time*1e6-evolve_time*1e6*(1//42)), evolve_time*1e6]
     xtickerlabels = @.latexstring(@.round(xtickers, sigdigits=2))
     xtickerlabels[2] = ""
     xtickerlabels[6] = ""
     xticks!(xtickers, xtickerlabels)
 end
 
+n_eig=15
 # state fidelity heatmap
 begin
-    p1 = heatmap(eig_fidelities[1:9, :], colorbar=false, c=c=cgrad([:white, :indigo], [0.001, 0.1, 0.5]), foreground_color=:black)
+    # p1 = heatmap(eig_fidelities[1:n_eig, :], colorbar=false, c=c=cgrad([:white, :indigo], [0.001, 0.1, 0.5]), foreground_color=:black)
+    p1 = heatmap(eig_fidelities[1:n_eig, :], colorbar=false, c=c=cgrad([:white, :indigo], [0.001, 0.1, 0.5]), foreground_color=:black)
     xlabel!(L"t / \mu \mathrm{s}")
     ylabel!(L"\mathrm{Eigenstate, }|n(t)\rangle")
-    ytickers = collect(1:12)
+    ytickers = collect(1:n_eig)
     dt = ts[2]-ts[1]
-    xtickers = [0, Int(round(n_steps*(1//42))), n_steps/4, n_steps/2, 3*n_steps/4, Int(round(n_steps*(41//42))), n_steps]
+    xtickers = [0, Int(round(n_steps*(20//840))), n_steps/4, n_steps/2, 3*n_steps/4, Int(round(n_steps*(41//42))), n_steps]
     xtickerlabels = @.latexstring(@.round(xtickers.*dt*1e6, sigdigits=2))
     xtickerlabels[2] = ""
     xtickerlabels[6] = ""
     yticks!(ytickers, @.latexstring(ytickers))
     data2 = collect(LinRange(0, 1, 1000))
-    p2 = heatmap([1], data2, [data2;;], fg_color=:black, c=cgrad([:white, :indigo], [0.05, 0.1, 0.5]), colorbar=false, foreground_color=:black, xaxis=false, ymirror=true, ticks=([0, 0.2, 0.4, 0.6, 0.8, 1], [L"0.0", L"0.2", L"0.4", L"0.6", L"0.8", L"1.0"]), ylabel=L"F")
+    p2 = heatmap([1], data2, [data2;;], fg_color=:black, c=cgrad([:white, :indigo], [0.001, 0.1, 0.5]), colorbar=false, foreground_color=:black, xaxis=false, ymirror=true, ticks=([0, 0.2, 0.4, 0.6, 0.8, 1], [L"0.0", L"0.2", L"0.4", L"0.6", L"0.8", L"1.0"]), ylabel=L"F")
 
     l = @layout [a{0.95w} b]
-    plot!(p1, p2, layout=l, tick_direction=:out)
+    plot!(p1, p2, layout=l, tick_direction=:out, size=(750, 500))
     xticks!(xtickers, xtickerlabels)
 end
 
 # likeness heatmap
 begin
-    p1 = heatmap(solution_likeness[1:9, :], c=colours, colorbar=false)
+    p1 = heatmap(solution_likeness[1:n_eig, :], c=colours, colorbar=false)
     xlabel!(L"t / \mu \mathrm{s}")
     ylabel!(L"\mathrm{Eigenstate, }|n(t)\rangle")
     ytickers = collect(1:12)
@@ -2592,16 +3463,20 @@ begin
     p2 = heatmap([1], data2, [data2;;], fg_color=:black, c=colours, colorbar=false, xaxis=false, ymirror=true, ticks=([0, 0.2, 0.4, 0.6, 0.8, 1], [L"0.0", L"0.2", L"0.4", L"0.6", L"0.8", L"1.0"]), ylabel=L"F")
 
     l = @layout [a{0.95w} b]
-    plot!(p1, p2, layout=l, tick_direction=:out)
-    xticks!([0, Int(round(n_steps*(1//42))), n_steps/4, n_steps/2, 3*n_steps/4, Int(round(n_steps*(41//42))), n_steps], [L"0", "",  L"2.1", L"4.2", L"6.3", "", L"8.4"])
+    plot!(p1, p2, layout=l, tick_direction=:out, size=(750,500))
+    xtickers = [0, Int(round(n_steps*(97//840))), n_steps/4, n_steps/2, 3*n_steps/4, Int(round(n_steps*(41//42))), n_steps]
+    xtickerlabels = @.latexstring(@.round(xtickers.*(evolve_time*1e6/n_steps), sigdigits=2))
+    xtickerlabels[2] = ""
+    xtickerlabels[6] = ""
+    xticks!(xtickers, xtickerlabels)
 end
 
 state_fidelities_phase = state_fidelities
 state_fidelities_detuning = state_fidelities
 plot(collect(1:n_steps), [state_fidelities, state_fidelities_phase, state_fidelities_detuning])
 
-path = raw"C:\Users\Plowa\Programming\Projects\Durham\Project 2526\Figures\3 vertex triangle\perturbed\Gaussian 3 vertex\averages\single timesweep\eigenspectra\spectra\mean 0"
-savefig(joinpath(path, "graph4.svg"))
+path = raw"C:\Users\Plowa\Programming\Projects\Durham\Project 2526\Figures\3 vertex triangle\Optimised\Avg GS fidelity cost fn (2)\Eigenspectrum plots"
+savefig(joinpath(path, "likeness_heatmap.svg"))
 path = raw"C:\Users\Plowa\Programming\Projects\Durham\Project 2526\Figures\3 vertex triangle\perturbed\1 vertex\single timesweep\negative offset\eigenspectra\spectra"
 savefig(joinpath(path, "eigenspectrum_2e-1.svg"))
 path = raw"C:\Users\Plowa\Programming\Projects\Durham\Project 2526\Figures\3 vertex triangle\perturbed\Gaussian 3 vertex\averages\single timesweep\eigenspectra\fidelity spectra/"
@@ -2654,11 +3529,11 @@ end
 begin
     c6 = [0]
     rydberg_states = 1
-    evolve_time = 6
+    evolve_time = 1/sqrt(2)
     n_steps = 1000
     node_locations = [0 0 0]
 
-    Δ_max = [0].*(2pi)
+    Δ_max = [-1].*(2pi)
     function Δ_sweep(Δ)
         sweep = zeros(n_steps)
         sweep[1:n_steps] .= Δ
@@ -2690,7 +3565,7 @@ end
 begin
     c6 = [0]
     rydberg_states = 1
-    evolve_time = 40000
+    evolve_time = 400
     n_steps = 1000
     node_locations = [0 0 0]
 
@@ -2727,7 +3602,7 @@ begin
             end
         end
     end
-    initial_state = [1 1]./sqrt(2)
+    initial_state = [1 -1]./sqrt(2)
     ts = [(i-1)*(evolve_time/n_steps) for i in 1:(n_steps+1)]
 end
 
@@ -2788,14 +3663,14 @@ begin
     n_steps = 5000
     node_locations = [0 0 0]
 
-    Δ_max = [1].*(2pi)
+    Δ_max = [5].*(2pi)
     function Δ_sweep(Δ)
         sweep = zeros(n_steps)
         sweep[1:n_steps] .= LinRange(-Δ, +Δ, n_steps)
         return sweep
     end
 
-    Ω_max = [10].*(2pi)
+    Ω_max = [2].*(2pi)
     function Ω_sweep(Ω)
         sweep = zeros(n_steps)
         sweep[1:n_steps] .= Ω
@@ -2820,11 +3695,11 @@ end
 begin
     c6 = [0]
     rydberg_states = 1
-    evolve_time = 1000
+    evolve_time = 10
     n_steps = Int(5000*(21//20))
     node_locations = [0 0 0]
 
-    Δ_max = [10].*(2pi)
+    Δ_max = [5].*(2pi)
     function Δ_sweep(Δ)
         sweep = zeros(n_steps)
         sweep[1:Int(n_steps*(1//42))] .= -1*Δ
@@ -2833,7 +3708,7 @@ begin
         return sweep
     end
 
-    Ω_max = [1].*(2pi)
+    Ω_max = [2].*(2pi)
     function Ω_sweep(Ω)
         sweep = zeros(n_steps)
         sweep[1:Int(n_steps*(1//42))] .= LinRange(0, Ω, Int(n_steps*(1//42)))
@@ -2860,7 +3735,7 @@ end
 begin
     c6 = [0]
     rydberg_states = 1
-    evolve_time = Int(20)
+    evolve_time = Int(10)
     n_steps = Int(5000*(21//20))
     node_locations = [0 0 0]
 
@@ -2900,10 +3775,10 @@ end
 begin
     ϕ=zeros(n_steps, rydberg_states, size(node_locations)[1])
     n_eig = 2
-    n_offsets = 100
+    n_offsets = 1
     Δ_constraints = 2pi*0.12*0
     Ω_constraints = 0.01*Ω_max[1]*0
-    ϕ_constraints = 0.01
+    ϕ_constraints = 0.01*0
     Ω_off = zeros(rydberg_states, size(node_locations)[1], n_offsets, n_steps)
     Δ_off = zeros(rydberg_states, size(node_locations)[1], n_offsets, n_steps)
     ϕ_off = zeros(rydberg_states, size(node_locations)[1], n_offsets, n_steps)
@@ -2920,6 +3795,7 @@ begin
     density_operators_eig_total = zeros(ComplexF64, size(initial_state)[2], size(initial_state)[2], n_eig, n_steps, n_offsets)
     density_operator_state_total = zeros(ComplexF64, size(initial_state)[2], size(initial_state)[2], n_steps, n_offsets)
     δ_total = zeros(n_steps, n_offsets)
+    inst_eigvecs_real_total = zeros(size(initial_state)[2], n_eig, n_steps, n_offsets)
     for q in 1:n_offsets
         for l in 1:rydberg_states
             Δ_random_offset = zeros(size(Δ)[3])
@@ -2973,8 +3849,6 @@ begin
         end
 
         states_total[:, :, q], h_array_total[:, :, :, q] = trotter_evolve(total_hamiltonian(n_steps; ϕ_s=ϕ), initial_state, evolve_time)
-
-        inst_eigvecs_real = zeros(size(initial_state)[2], n_eig, n_steps)
         
         for i in 1:(n_steps)
             h_sparse = h_array_total[:,:,i,q] |> sparse
@@ -3000,10 +3874,10 @@ begin
                 phase_0 = log(inst_eigvecs_total[1, j, i, q]/r0)
                 inst_eigvecs_total[:, j, i, q] = inst_eigvecs_total[:, j, i, q]*exp(-1*phase_0)
 
-                inst_eigvecs_real[:, j, i] .= @.real(inst_eigvecs_total[:, j, i, q]./inst_eigvecs_total[1, j, i, q])
-                eigvec_j_real_norm = sqrt(sum(@.real(inst_eigvecs_real[:, j, i].*conj(inst_eigvecs_real[:, j, i]))))
-                eigvec_j_real_normalised = inst_eigvecs_real[:, j, i]./eigvec_j_real_norm
-                inst_eigvecs_real[:, j, i] = eigvec_j_real_normalised
+                inst_eigvecs_real_total[:, j, i, q] .= @.real(inst_eigvecs_total[:, j, i, q]./inst_eigvecs_total[1, j, i, q])
+                eigvec_j_real_norm = sqrt(sum(@.real(inst_eigvecs_real_total[:, j, i, q].*conj(inst_eigvecs_real_total[:, j, i, q]))))
+                eigvec_j_real_normalised = inst_eigvecs_real_total[:, j, i, q]./eigvec_j_real_norm
+                inst_eigvecs_real_total[:, j, i, q] = eigvec_j_real_normalised
                 density_operators_eig_total[:, :, j, i, q] = (inst_eigvecs_total[:, j, i, q])*(inst_eigvecs_total[:, j, i, q]')
                 density_operator_state_total[:, :, i, q] = states_total[:, i, q]*(states_total[:, i, q]')
             end
@@ -3043,6 +3917,7 @@ begin
     density_operators_eig = zeros(ComplexF64, size(h_array)[1], size(h_array)[1], n_eig, n_steps)
     density_operator_state = zeros(ComplexF64, size(h_array)[1], size(h_array)[1], n_steps)
     δ = zeros(n_steps)
+    inst_eigvecs_real = zeros(size(initial_state)[2], n_eig, n_steps)
     for m in 1:n_offsets
         state_fidelities = state_fidelities .+ state_fidelities_total[:, m]
         states = states .+ states_total[:, :, m]
@@ -3053,6 +3928,7 @@ begin
         density_operators_eig = density_operators_eig .+ density_operators_eig_total[:, :, :, :, m]
         density_operator_state = density_operator_state .+ density_operator_state_total[:, :, :, m]
         δ = δ .+ δ_total[:, m]
+        inst_eigvecs_real = inst_eigvecs_real .+ inst_eigvecs_real_total[:, :, :, m]
     end
     state_fidelities = state_fidelities./n_offsets
     states = states./n_offsets
@@ -3063,6 +3939,7 @@ begin
     density_operators_eig = density_operators_eig./n_offsets
     density_operator_state = density_operator_state./n_offsets
     δ = δ./n_offsets
+    inst_eigvecs_real = inst_eigvecs_real./n_offsets
 
     berry = zeros(ComplexF64, n_steps, n_eig)
     dynamic = zeros(n_steps, n_eig)
@@ -3088,6 +3965,7 @@ begin
     end
 end
 
+ϕ
 states
 berry
 dynamic
@@ -3106,8 +3984,10 @@ sum(random)
 
 # eigenspectrum plot
 begin
-    Plots.plot(ts[1:n_steps], (inst_eigvals[2,:]-0*inst_eigvals[1, :]), label=L"|e\rangle", c=:red, size=(500, 350))
-    Plots.plot!(ts[1:n_steps], (inst_eigvals[1, :]-0*inst_eigvals[1, :]), label=L"|g\rangle", c=:blue)
+    Plots.plot(ts[1:n_steps], (inst_eigvals[2,:]-0*inst_eigvals[1, :])./(2pi), label=L"|e\rangle", c=:red, size=(500, 350))
+    Plots.plot!(ts[1:n_steps], (inst_eigvals[1, :]-0*inst_eigvals[1, :])./(2pi), label=L"|g\rangle", c=:blue)
+    # Plots.plot(Δ[1:n_steps, 1, 1]./(2pi), (inst_eigvals[2,:]-0*inst_eigvals[1, :])./(2pi), label=L"|e\rangle", size=(500, 350), lw=2, line_z = LinRange(0, 1, n_steps), c=cgrad([:lightsalmon, :red], n_steps), colorbar=false)
+    # Plots.plot!(Δ[1:n_steps, 1, 1]./(2pi), (inst_eigvals[1, :]-0*inst_eigvals[1, :])./(2pi), label=L"|g\rangle", lw=2, line_z = LinRange(0, 1, n_steps), c=cgrad([:lightblue1, :blue], n_steps), colorbar=false)
     
     ylabel!(L"\mathrm{Energy, }E / (h\mathrm{MHz})")
     # xlims!(0, evolve_time*1e6)
@@ -3117,10 +3997,16 @@ begin
     xtickerlabels = @.latexstring(@.round(xtickers))
     xtickerlabels[2] = ""
     xtickerlabels[6] = ""
-    # xticks = [0, round(ts[n_steps+1]/4), round(2*ts[n_steps+1]/4), round(3*ts[n_steps+1]/4), round(4*ts[n_steps+1]/4)]
+    xticks = [0, round(ts[n_steps+1]/4), round(2*ts[n_steps+1]/4), round(3*ts[n_steps+1]/4), round(4*ts[n_steps+1]/4)]
     # yticks!([-50, -25, 0, 25, 50], [L"-50", L"-25", L"0", L"25", L"50"])
     # yticks!([-45, -30, -15, 0, 15, 30, 45], @.latexstring([-45, -30, -15, 0, 15, 30, 45]))
     # ylims!(-50, 50)
+
+    yticks!([-5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5], @.latexstring([-5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5]))
+    # xlabel!(L"\Delta/(2\pi)")
+    # xtickers = [-5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5]
+    # xticks!(xtickers, @.latexstring(xtickers))
+    # xlims!(-5, 5)
     xticks!(xtickers, xtickerlabels)
 end
 
@@ -3172,7 +4058,7 @@ end
 
 # transition probability
 begin
-    plot(ts[1:n_steps], δ, lc=:gold, lw=2, label="")
+    plot(ts[1:n_steps], δ, lc=:gold, lw=4, label=L"\delta")
     ylabel!(L"\mathrm{Transition}"*" "*L"\mathrm{Probability}")
     xlabel!(L"t / \mu \mathrm{s}")
     xlims!(0, ts[n_steps+1])
@@ -3181,8 +4067,9 @@ begin
     xtickerlabels = @.latexstring(@.round(xtickers))
     xtickerlabels[2] = ""
     xtickerlabels[6] = ""
-    ytickers_unrounded = LinRange(0, δ[Int(n_steps/2)]*1.4, 5)
+    ytickers_unrounded = LinRange(0, δ[Int(n_steps/3)]*1.4, 5)
     ytickers = @.round(ytickers_unrounded, sigdigits=1)
+    ytickers = [0.0, 0.01, 0.02, 0.03, 0.04, 0.05]
     yticks!(ytickers, @.latexstring(ytickers))
     xticks!(xtickers, xtickerlabels)
 end
@@ -3192,34 +4079,69 @@ begin
     Plots.plot(ts[1:n_steps], [eig_fidelities[1, :], eig_fidelities[2, :]], lc=[:blue :red], label=[L"|g\rangle" L"|e\rangle"], linewidth=2, legend=:topright)
     ylabel!(L"\mathrm{Fidelity, }F")
     xlabel!(L"t / \mu \mathrm{s}")
-    Plots.plot!(twinx(), ts[1:n_steps], δ, ylabel=L"\mathrm{Transition Probability}", label=L"\delta", c=:gold, linewidth=2, legend=:topleft)
+    ylims!(0,1)
+    ytickers = [0, 0.2, 0.4, 0.6, 0.8, 1.0]
+    yticks!(ytickers, @.latexstring(ytickers))
+    ytickers2 = [0, 0.2, 0.4, 0.6, 0.8, 1.0]./2
+    Plots.plot!(twinx(), ts[1:n_steps], δ*2, ylabel=L"\mathrm{Transition Probability}", label=L"\delta", c=:gold, linewidth=2, legend=:topleft, yticks=(ytickers2, @.latexstring(ytickers2)), ylims=(0,0.5))
     
     xlims!(0, ts[n_steps+1])
     xtickers = [0, (ts[n_steps+1]*(1//42)), ts[n_steps+1]*(1/4), ts[n_steps+1]*(2/4), ts[n_steps+1]*(3/4), (ts[n_steps+1]*(41//42)), ts[n_steps+1]]
     xtickerlabels = @.latexstring(@.round(xtickers))
     xtickerlabels[2] = ""
     xtickerlabels[6] = ""
-    ytickers = [0, 0.2, 0.4, 0.6, 0.8, 1.0]
-    yticks!(ytickers, @.latexstring(ytickers))
     xticks!(xtickers, xtickerlabels)
-    ylims!(0,1)
 end
 
 # excited state probability plot
 begin
     # excited_state = [0, 1]
     # state_fidelities = [real(((states[:, i]')*excited_state)*((excited_state')*states[:, i])) for i in 1:n_steps]
-    plot(ts[1:n_steps], [state_fidelities_total[1:n_steps, q] for q in 1:n_offsets], lc=[:red3 for q in 1:n_offsets], alpha=0.1, linewidth=1.5, legend=false)
-    plot!(ts[1:n_steps], state_fidelities[1:n_steps], lc=:black, linewidth=2)
+    plot(ts[1:n_steps], [state_fidelities_total[1:n_steps, q] for q in 1:n_offsets], lc=[:red3 for q in 1:n_offsets], alpha=0.1, linewidth=1.5, label="")
+    plot!(ts[1:n_steps], state_fidelities[1:n_steps], lc=:green, linewidth=2, label=L"|\langle\psi|e\rangle |^2")
     # oscillations = [(-1*(real(total_phase[i, 2]*conj(total_phase[i, 1]))/2)+0.5)*state_fidelities[i] for i in 1:n_steps]
     # oscillations = [((real(total_phase[i, 2]*conj(total_phase[i, 1])))) for i in 1:n_steps]
     # plot!(ts[1:n_steps], oscillations[1:n_steps])
+    ytickers = [0, 0.2, 0.4, 0.6, 0.8, 1.0]
+    yticks!(ytickers, @.latexstring(ytickers))
+    # ylabel!(L"|\langle\psi|e\rangle |^2")
+    ylabel!(L"\mathrm{Fidelity, }F")
+    # xtickers = [0, 1, 2, 3, 4, 5, 6]
+    # xtickers = [0, 0.1, 0.2, 0.3, 0.4, 0.5]
+    # xticks!(xtickers, @.latexstring(xtickers))
+    xlabel!(L"\mathrm{t/ \mu s}")
+    xlims!(0, ts[n_steps+1])
+    xtickers = [0, (ts[n_steps+1]*(1//42)), ts[n_steps+1]*(1/4), ts[n_steps+1]*(2/4), ts[n_steps+1]*(3/4), (ts[n_steps+1]*(41//42)), ts[n_steps+1]]
+    xtickerlabels = @.latexstring(@.round(xtickers))
+    xtickerlabels[2] = ""
+    xtickerlabels[6] = ""
+    ytickers = [0, 0.2, 0.4, 0.6, 0.8, 1.0]
+    xticks!(xtickers, xtickerlabels)
+    # xlabel!(L"(a)")
+    # xlims!(0,3)
+    ylims!(0,1)
 end
+
+state_fidelities[n_steps]
 
 # dynamic phase plot
 begin
-    oscillations = [real(dynamic[i, 2]*conj(dynamic[i, 1])) for i in eachindex(dynamic[:,1])]
-    plot(ts[1:n_steps], oscillations)
+    oscillations = [real(dynamic[i, 2]*conj(dynamic[i, 1])*exp(im*4.2)) for i in eachindex(dynamic[:,1])]
+    # plot(ts[1:n_steps], [((oscillations.+1)./2).*1, state_fidelities], lw=2, lc=[:blue :red], legend=false, alpha=[0.2 1])
+    plot(ts[1:n_steps], state_fidelities, lw=2, lc=:green, legend=false)
+    ytickers = [0, 0.2, 0.4, 0.6, 0.8, 1.0]
+    yticks!(ytickers, @.latexstring(ytickers))
+    ylabel!(L"\mathrm{Fidelity, }F")
+    ylims!(0,1)
+    plot!(twinx(), ts[1:n_steps], ((oscillations.+1)./2).*1, ylabel=L"\mathcal{Re}\{e^{i\theta_1(t)-\theta_2(t)}\}", c=:purple, lw=2, yticks=([0, 0.5, 1], @.latexstring([-1, 0, 1])), ylims=(0,1), alpha=0.2, label="")
+    xlabel!(L"\mathrm{t/ \mu s}")
+    xlims!(0, ts[n_steps+1])
+    xtickers = [0, (ts[n_steps+1]*(1//42)), ts[n_steps+1]*(1/4), ts[n_steps+1]*(2/4), ts[n_steps+1]*(3/4), (ts[n_steps+1]*(41//42)), ts[n_steps+1]]
+    xtickerlabels = @.latexstring(@.round(xtickers))
+    xtickerlabels[2] = ""
+    xtickerlabels[6] = ""
+    ytickers = [0, 0.2, 0.4, 0.6, 0.8, 1.0]
+    xticks!(xtickers, xtickerlabels)
 end
 
 # berry phase plot
@@ -3228,8 +4150,21 @@ begin
     oscillation_tot = [real(berry[i, 2]*conj(berry[i, 1])) for i in 1:n_steps]
     oscillation_1 = [real(berry[i, 1]) for i in 1:n_steps]
     oscillation_2 = [real(berry[i, 2]) for i in 1:n_steps]
-    plot(ts[1:n_steps], [oscillation_1, oscillation_2])
+    # plot(ts[1:n_steps], [oscillation_1, oscillation_2])
+    plot(ts[1:n_steps], oscillation_1, lw=5, c=:pink, label=L"\mathcal{Re}\{e^{i\gamma_1(t)}\}")
+    # ytickers = [-1, -0.5, 0, 0.5, 1]
+    # yticks!(ytickers, @.latexstring(ytickers))
+    # ylims!(-1, 1)
+    # ylabel!(L"\mathcal{Re}\{e^{i\gamma_1(t)}\}")
+    # plot!(twinx(), ts[1:n_steps], [real(im*log(berry[i, 1])) for i in 1:n_steps], c=cgrad([:lightblue1, :blue], n_steps), line_z=LinRange(0, 1, n_steps), label=L"\gamma_1(t)", yticks=([0, -pi/2, -pi], [L"0", L"\frac{-\pi}{2}", L"-\pi"]), ylabel=L"\gamma_1(t)", ylims=(-pi, 0), lw=3, legend=:bottomleft, colorbar=false)
+    # xlims!(0, 400)
+    # xticks!([0, 100, 200, 300, 400], @.latexstring([0.0, 0.25, 0.50, 0.75, 1.0]))
+    # xlabel!(L"t/T")
 end
+im.*@.log(berry[:, 1])
+
+states[:, 1]
+states[:, n_steps+1]
 
 # combined phase plot
 begin
@@ -3240,18 +4175,25 @@ end
 
 # 2D vector rotation plot
 begin
-    Plots.scatter([0], [0], xlims=(-1, 1), ylims= (-1, 1), size=(400, 400), showaxis=false, label="", markersize=0.1)
-    Plots.plot!(zeros(500), LinRange(-1, 1, 500), lc=:black, label="")
-    Plots.plot!(LinRange(-1, 1, 500), zeros(500), lc=:black, label="")
+    Plots.scatter([0], [0], xlims=(-1, 1), ylims= (-1, 1), size=(450, 400), showaxis=false, label="", markersize=0.1)
+    # Plots.plot!(zeros(500), LinRange(-1, 1, 500), lc=:black, label="", lw=2)
+    # Plots.plot!(LinRange(-1, 1, 500), zeros(500), lc=:black, label="", lw=2)
 
     n = 50
-    r = @.Int([round(LinRange(Int(n_steps*1//42), n_steps-Int(n_steps*1//42), n)[i]) for i in 1:n])
+    r = @.Int([round(LinRange(Int(round(n_steps*1//42)), n_steps-Int(round(n_steps*1//42)), n)[i]) for i in 1:n])
     colourgrad_e = cgrad([:lightsalmon, :red], n)
     colourgrad_g = cgrad([:lightblue1, :blue], n)
+    Plots.quiver!([0], [-1], quiver=([0], [2]), color=:black, lw=2)
+    Plots.quiver!([-1], [0], quiver=([2], [0]), color=:black, lw=2)
     for i in 1:n
-        Plots.quiver!([0], [0], quiver=([inst_eigvecs_real[1, 1, Int(r[i])]], [inst_eigvecs_real[2, 1, r[i]]]), color=colourgrad_g[i])
-        Plots.quiver!([0], [0], quiver=([inst_eigvecs_real[1, 2, Int(r[i])]], [inst_eigvecs_real[2, 2, r[i]]]), color=colourgrad_e[i])
+        Plots.quiver!([0], [0], quiver=([inst_eigvecs_real[1, 1, Int(r[i])]], [inst_eigvecs_real[2, 1, r[i]]]), color=colourgrad_g[i], lw=2)
+        Plots.quiver!([0], [0], quiver=([inst_eigvecs_real[1, 2, Int(r[i])]], [inst_eigvecs_real[2, 2, r[i]]]), color=colourgrad_e[i], lw=2)
+        # Plots.quiver!([0], [0], quiver=((1/sqrt(2))*([inst_eigvecs_real[1, 2, Int(r[i])]]+[inst_eigvecs_real[1, 1, Int(r[i])]]), (1/sqrt(2))*([inst_eigvecs_real[2, 2, r[i]]]+[inst_eigvecs_real[2, 1, r[i]]])), color=:magenta, lw=2)
     end
+
+    # Plots.quiver!([0], [0], quiver=(-[inst_eigvecs_real[1, 1, Int(r[1])]], -[inst_eigvecs_real[2, 1, r[1]]]), color=colourgrad_g[2], lw=2)
+    # Plots.quiver!([0], [0], quiver=([inst_eigvecs_real[1, 2, Int(r[1])]], [inst_eigvecs_real[2, 2, r[1]]]), color=colourgrad_e[2], lw=2)
+    # Plots.quiver!([0], [0], quiver=((1/sqrt(3))*([inst_eigvecs_real[1, 2, Int(r[1])]]+[inst_eigvecs_real[1, 1, Int(r[1])]]), (1/sqrt(3))*([inst_eigvecs_real[2, 2, r[1]]]-[inst_eigvecs_real[2, 1, r[1]]])), color=:magenta, lw=2)
 
     # Plots.quiver!([0], [0], quiver=([inst_eigvecs_real[1, 1, 1]], [inst_eigvecs_real[2, 1, 1]]), color=:blue, lw=2)
     # Plots.quiver!([0], [0], quiver=([inst_eigvecs_real[1, 2, 2]], [inst_eigvecs_real[2, 2, 2]]), color=:red, lw=2)
@@ -3265,14 +4207,14 @@ begin
     # Plots.quiver!([0], [0], quiver=([inst_eigvecs_real[1, 1, n_steps-1]], [inst_eigvecs_real[2, 1, n_steps-1]]), color=:blue, lw=2)
     # Plots.quiver!([0], [0], quiver=([inst_eigvecs_real[1, 2, n_steps]], [inst_eigvecs_real[2, 2, n_steps]]), color=:red, lw=2)
 
-    Plots.annotate!(-0.1, -0.96, (L"|1\rangle"), fontsize=20)
-    Plots.annotate!(-1, 0.1, (L"|0\rangle"), fontsize=20)
+    Plots.annotate!(-0.15, -0.96, (L"|1\rangle"), fontsize=20)
+    Plots.annotate!(-1, 0.15, (L"|0\rangle"), fontsize=20)
 end
 
 # bloch sphere plot
 begin
     function bloch_plot()
-        fig = Figure()
+        fig = Figure(size=(1250,1250))
         ax = Axis3(fig[1, 1], aspect = :data, azimuth = pi/6, elevation = pi/8, xzpanelvisible=false, 
                     yzpanelvisible=false, 
                     xypanelvisible=false, 
@@ -3333,9 +4275,9 @@ begin
         lines!(ax, vertical_circle_2, color=:gray74, transparency=true, linewidth=0.5)
         lines!(ax, trajectory_ground, color=1:n_steps, colormap=cgrad([:lightblue1, :darkblue]), transparency=true, linewidth=5)
         lines!(ax, trajectory_excited, color=1:n_steps, colormap=cgrad([:lightsalmon, :darkred]), transparency=true, linewidth=5)
-        lines!(ax, trajectory_state, color=1:n_steps, colormap=range(HSV(0,1,1), stop=HSV(-360,1,1), length=n_steps), transparency=true, linewidth=5)
-        Makie.text!(L"|0\rangle", position=(0, 0, 1.1), fontsize=20)
-        Makie.text!(L"|1\rangle", position=(0, 0, -1.3), fontsize=20)
+        lines!(ax, trajectory_state, color=1:n_steps, colormap=range(HSV(0,1,1), stop=HSV(-360,1,1), length=n_steps), transparency=true, linewidth=8)
+        Makie.text!(L"|0\rangle", position=(0, 0, 1.1), fontsize=30)
+        Makie.text!(L"|1\rangle", position=(0, 0, -1.3), fontsize=30)
 
         limits!(ax, -1.5, 1.5, -1.5, 1.5, -1.5, 1.5)
 
@@ -3344,5 +4286,25 @@ begin
     fig = bloch_plot()
 end
 
-path = raw"C:\Users\Plowa\Programming\Projects\Durham\Project 2526\Figures\Illustrative\Two-level system\Linear sweep"
-savefig(joinpath(path, "oscillation_fidelity_line_plot.svg"))
+# colourgrad bar plot for state progression around bloch sphere
+begin
+    p1 = heatmap(eig_fidelities[1:n_eig, :], colorbar=false, c=c=cgrad([:white, :indigo], [0.001, 0.1, 0.5]), foreground_color=:black)
+    xlabel!(L"t / \mu \mathrm{s}")
+    ylabel!(L"\mathrm{Eigenstate, }|n(t)\rangle")
+    ytickers = collect(1:n_eig)
+    dt = ts[2]-ts[1]
+    xtickers = [0, Int(round(n_steps*(20//840))), n_steps/4, n_steps/2, 3*n_steps/4, Int(round(n_steps*(41//42))), n_steps]
+    xtickerlabels = @.latexstring(@.round(xtickers.*dt*1e6, sigdigits=2))
+    xtickerlabels[2] = ""
+    xtickerlabels[6] = ""
+    yticks!(ytickers, @.latexstring(ytickers))
+    data2 = collect(LinRange(0, 1, 1000))
+    p2 = heatmap([1], data2, [data2;;], fg_color=:black, c=range(HSV(0,1,1), stop=HSV(-360,1,1)), colorbar=false, foreground_color=:black, xaxis=false, ymirror=true, ticks=([0, 0.2, 0.4, 0.6, 0.8, 1], [L"0.0", L"0.2", L"0.4", L"0.6", L"0.8", L"1.0"]), ylabel=L"t/T")
+
+    l = @layout [a{0.95w} b]
+    plot!(p1, p2, layout=l, tick_direction=:out, size=(750, 500))
+end
+
+path = raw"C:\Users\Plowa\Programming\Projects\Durham\Project 2526\Figures\Illustrative\Two-level system\Linear sweep\report figures"
+savefig(joinpath(path, "transitionprob_cubic.svg"))
+Makie.save(joinpath(path, "blochplot_10_1_cubic.png"), fig, update=false)
